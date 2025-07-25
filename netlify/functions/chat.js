@@ -3,6 +3,11 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const API_KEY = process.env.GEMINI_API_KEY;
 const SECRET_SYSTEM_PROMPT = process.env.SECRET_SYSTEM_PROMPT;
 
+// Check for missing environment variables
+if (!API_KEY || !SECRET_SYSTEM_PROMPT) {
+    console.error("Missing GEMINI_API_KEY or SECRET_SYSTEM_PROMPT environment variable.");
+}
+
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
@@ -17,6 +22,14 @@ exports.handler = async (event) => {
     // Only allow POST requests
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    // Return error if env vars are missing
+    if (!API_KEY || !SECRET_SYSTEM_PROMPT) {
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: "Missing GEMINI_API_KEY or SECRET_SYSTEM_PROMPT environment variable." }),
+        };
     }
 
     try {

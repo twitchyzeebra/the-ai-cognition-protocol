@@ -1,5 +1,9 @@
+[build]
+  publish = "."
+  
 [functions]
   directory = "netlify/functions"
+  included_files = ["docs/**/*", "system-prompt-encrypted.json"]
   
 [functions.chat]
   timeout = 600

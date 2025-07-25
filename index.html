@@ -6,15 +6,41 @@
     <title>Gemini AI Chat</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-    <div id="chat-container">
-        <h1>My Custom AI</h1>
-        <div id="chat-log"></div>
-        <div id="input-container">
-            <input type="text" id="user-input" placeholder="Ask a question...">
-            <button id="send-button">Send</button>
-        </div>
-        <div id="loading-indicator" class="hidden">Thinking...</div>
+    <div id="container">
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <h1>Documents</h1>
+                <input type="text" id="search-docs" placeholder="Search chapters...">
+            </div>
+            <nav id="chapters-list">
+                <!-- Chapters will be dynamically loaded here -->
+            </nav>
+        </aside>
+        <main id="main-content">
+            <section id="chat-section">
+                <h1>Gemini AI Chat</h1>
+                <div id="chat-window">
+                    <div id="chat-log"></div>
+                </div>
+                <form id="chat-form">
+                    <input type="text" id="chat-input" placeholder="Type your message..." autocomplete="off">
+                    <button type="submit">Send</button>
+                </form>
+                <div id="loading-indicator" class="hidden">
+                    <span id="thinking-text">Thinking</span>
+                    <span id="thinking-timer">0s</span>
+                </div>
+            </section>
+            <section id="doc-preview" class="hidden">
+                <div id="doc-preview-header">
+                    <h2 id="doc-title">Document Preview</h2>
+                    <button id="close-preview">×</button>
+                </div>
+                <div id="doc-content"></div>
+            </section>
+        </main>
     </div>
     <script src="script.js"></script>
 </body>

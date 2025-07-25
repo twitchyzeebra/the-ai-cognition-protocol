@@ -1,5 +1,16 @@
 [functions]
   directory = "netlify/functions"
+  
+[functions.chat]
+  timeout = 600
+
+# Local development settings
+[dev]
+  functionsTimeout = 600
+
+# Load environment variables for local development
+[context.dev.environment]
+  SYSTEM_PROMPT_KEY = "0190e991e45d7f8004f4655ed47d283fb2baf1feac6cc08787f85c90546f85d2"
 
 [[redirects]]
   from = "/api/chat"

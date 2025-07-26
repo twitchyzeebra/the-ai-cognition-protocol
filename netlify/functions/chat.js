@@ -81,27 +81,28 @@ function loadSystemPrompt() {
 }
 
 // Streaming handler that sends chunks in real-time
-exports.handler = stream(async (event, response) => {
-    // Set headers for streaming
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.setHeader('Content-Type', 'text/event-stream');
-    response.setHeader('Cache-Control', 'no-cache');
-    response.setHeader('Connection', 'keep-alive');
+exports.handler = stream(async (event, context) => {
+    // This is the correct handler signature for Netlify streaming functions
 
     // Handle preflight requests
     if (event.httpMethod === 'OPTIONS') {
-        response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-        response.statusCode = 200;
-        response.end();
-        return;
+        return {
+            statusCode: 200,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            }
+        };
     }
 
     // Only allow POST requests
     if (event.httpMethod !== 'POST') {
-        response.statusCode = 405;
-        response.end(JSON.stringify({ error: 'Method Not Allowed' }));
-        return;
+        return { 
+            statusCode: 405, 
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: JSON.stringify({ error: 'Method Not Allowed' })
+        };
     }
 
     try {
@@ -109,9 +110,11 @@ exports.handler = stream(async (event, response) => {
         const { prompt, history } = body;
 
         if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-            response.statusCode = 400;
-            response.end(JSON.stringify({ error: 'Invalid prompt: Prompt must be a non-empty string.' }));
-            return;
+            return { 
+                statusCode: 400, 
+                headers: { 'Access-Control-Allow-Origin': '*' },
+                body: JSON.stringify({ error: 'Invalid prompt: Prompt must be a non-empty string.' })
+            };
         }
 
         const systemPrompt = loadSystemPrompt();
@@ -123,43 +126,56 @@ exports.handler = stream(async (event, response) => {
         }
 
         const chat = model.startChat({ history: fullHistory });
-        
-        // Use a try...catch...finally block to ensure the stream is always closed
-        try {
-            const result = await chat.sendMessageStream(prompt);
-            
-            // Write chunks directly to the response stream
-            response.write('data: {"type":"start"}\n\n');
-            
-            for await (const chunk of result.stream) {
-                const chunkText = chunk.text();
-                if (chunkText) {
-                    response.write(`data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`);
-                }
-            }
-            
-            response.write('data: {"type":"done"}\n\n');
-            console.log("Response complete");
+        const result = await chat.sendMessageStream(prompt);
 
-        } catch (streamError) {
-            console.error("Stream error:", streamError);
-            response.write(`data: ${JSON.stringify({type:"error",message:streamError.message})}\n\n`);
-        } finally {
-            // Always end the stream
-            response.end();
-        }
+        // Create a readable stream to push data into
+        const { Readable } = require('stream');
+        const readableStream = new Readable({ read() {} });
+
+        // Asynchronously push chunks from the AI to our readable stream
+        (async () => {
+            try {
+                readableStream.push('data: {"type":"start"}\n\n');
+                for await (const chunk of result.stream) {
+                    const chunkText = chunk.text();
+                    if (chunkText) {
+                        readableStream.push(`data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`);
+                    }
+                }
+                readableStream.push('data: {"type":"done"}\n\n');
+            } catch (streamError) {
+                console.error("Stream error:", streamError);
+                readableStream.push(`data: ${JSON.stringify({type:"error",message:streamError.message})}\n\n`);
+            } finally {
+                // Signal the end of the stream
+                readableStream.push(null);
+            }
+        })();
+
+        // Return the response object with the stream as the body
+        return {
+            statusCode: 200,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            },
+            body: readableStream,
+        };
 
     } catch (error) {
         console.error("Handler error:", error);
-        // If the main try block fails, we need to send an error in the SSE format
-        // before ending the stream. This block handles errors that occur before streaming begins.
-        if (!response.writableEnded) {
-            // Ensure headers are set for the error response
-            response.setHeader('Content-Type', 'text/event-stream');
-            response.setHeader('Cache-Control', 'no-cache');
-            response.setHeader('Connection', 'keep-alive');
-            response.write(`data: ${JSON.stringify({type:"error",message: 'Internal Server Error: ' + error.message})}\n\n`);
-            response.end();
-        }
+        // For errors before streaming, return a standard JSON error
+        return {
+            statusCode: 500,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+                error: 'Internal Server Error: ' + error.message 
+            }),
+        };
     }
 });

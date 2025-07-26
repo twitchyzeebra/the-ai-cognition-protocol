@@ -108,30 +108,36 @@ exports.handler = stream(async (event, context) => {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    try {
-        // Parse and validate the prompt and history from the request body
-        const body = JSON.parse(event.body);
-        const { prompt, history } = validateAndSanitizeInput(body.prompt, body.history);
+    // Using a Promise to handle the async streaming operation
+    return new Promise((resolve, reject) => {
+        try {
+            // Parse and validate the prompt and history from the request body
+            const body = JSON.parse(event.body);
+            const { prompt, history } = validateAndSanitizeInput(body.prompt, body.history || []);
 
-        const readableStream = new Readable({ read() {} });
+            const readableStream = new Readable({ read() {} });
 
-        // Start the AI stream in the background. The handler returns the stream immediately.
-        streamAIResponse(prompt, history, readableStream);
+            // Start the AI stream in the background. The handler returns the stream immediately.
+            streamAIResponse(prompt, history, readableStream);
 
-        return {
-            statusCode: 200,
-            headers: {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            },
-            body: readableStream,
-        };
-    } catch (error) {
-        console.error("Handler error:", error);
+            resolve({
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+                body: readableStream,
+            });
+        } catch (error) {
+            console.error("Handler error:", error);
+            // This will be caught by the promise's reject and handled below
+            reject(error);
+        }
+    }).catch(error => {
         return {
             statusCode: 400,
             body: JSON.stringify({ error: error.message }),
         };
-    }
+    });
 });

@@ -54,8 +54,13 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream
 
         // Set keep-alive pings only for the production environment
         if (isProduction) {
+            // Send an immediate keep-alive ping to prevent gateway timeout while waiting for the model
+            readableStream.push(':keep-alive\n\n');
+            console.log(`[${clientIP}] Sent immediate keep-alive ping before model generation.`);
+
             keepAliveInterval = setInterval(() => {
                 readableStream.push(':keep-alive\n\n');
+                console.log(`[${clientIP}] Sent periodic keep-alive ping.`);
             }, 5000); // Send a ping every 5 seconds
         }
         
@@ -176,6 +181,13 @@ exports.handler = stream(async (event, context) => {
         
         readableStream.push(`data: ${JSON.stringify({ event: 'connection-established' })}\n\n`);
         
+        // For long prompts in production, send extra pings immediately
+        if (!!process.env.NETLIFY && userPrompt.length > 100) {
+            console.log(`[${clientIP}] Long prompt detected, sending extra keep-alive pings.`);
+            readableStream.push(':keep-alive\n\n');
+            readableStream.push(':keep-alive\n\n');
+        }
+
         // Call the streaming function without awaiting it
         getRealtimeStreamResponse(model, fullPrompt, clientIP, readableStream);
 

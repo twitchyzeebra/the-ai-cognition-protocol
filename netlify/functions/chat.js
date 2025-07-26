@@ -1,10 +1,13 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { stream } = require("@netlify/functions");
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
 
 const API_KEY = process.env.GEMINI_API_KEY;
+
+// ... (rest of the helper functions like getKey, decryptSystemPrompt remain the same) ...
 
 // Decryption function
 function getKey(keyHex) {
@@ -35,7 +38,7 @@ function decryptSystemPrompt(encryptedData, password) {
 }
 
 // True streaming function using Node.js Readable stream
-async function getRealtimeStreamResponse(model, prompt, clientIP, stream) {
+async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream) {
     const startTime = Date.now();
 
     try {
@@ -47,7 +50,7 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, stream) {
         let chunkCount = 0;
         
         const keepAliveInterval = setInterval(() => {
-            stream.push(':keep-alive\n\n');
+            readableStream.push(':keep-alive\n\n');
             console.log(`[${clientIP}] Sent keep-alive ping.`);
         }, 15000);
 
@@ -63,7 +66,7 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, stream) {
                     totalLength: fullText.length,
                     elapsed: Date.now() - startTime
                 };
-                stream.push(`data: ${JSON.stringify(eventData)}\n\n`);
+                readableStream.push(`data: ${JSON.stringify(eventData)}\n\n`);
             }
         }
         
@@ -74,7 +77,7 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, stream) {
             totalLength: fullText.length,
             totalChunks: chunkCount
         };
-        stream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
+        readableStream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
         
         console.log(`[${clientIP}] Real-time streaming completed: ${Date.now() - startTime}ms`);
 
@@ -84,9 +87,9 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, stream) {
             error: 'Error during streaming.',
             message: error.message
         };
-        stream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
+        readableStream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
     } finally {
-        stream.push(null); // End the stream
+        readableStream.push(null); // End the stream
     }
 }
 
@@ -114,7 +117,8 @@ function checkRateLimit(clientIP) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-exports.handler = async (event) => {
+// Wrap the handler with the official `stream` utility
+exports.handler = stream(async (event) => {
     const clientIP = event.headers['x-forwarded-for'] || 'unknown';
 
     if (event.httpMethod !== 'POST') {
@@ -167,10 +171,10 @@ exports.handler = async (event) => {
 
         const fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${userPrompt}\nAI:`;
 
-        const stream = new Readable({ read() {} });
+        const readableStream = new Readable({ read() {} });
         
         // Start generating the response without awaiting it
-        getRealtimeStreamResponse(model, fullPrompt, clientIP, stream);
+        getRealtimeStreamResponse(model, fullPrompt, clientIP, readableStream);
 
         return {
             statusCode: 200,
@@ -180,9 +184,7 @@ exports.handler = async (event) => {
                 'Connection': 'keep-alive',
                 'Access-Control-Allow-Origin': '*',
             },
-            isBase64Encoded: false,
-            isStreaming: true, // Tell Netlify this is a streaming response
-            body: stream,
+            body: readableStream,
         };
 
     } catch (error) {
@@ -193,4 +195,4 @@ exports.handler = async (event) => {
             headers: { 'Content-Type': 'application/json' }
         };
     }
-};
+});

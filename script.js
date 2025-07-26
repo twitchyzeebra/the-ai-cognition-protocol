@@ -296,39 +296,79 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Try unlimited streaming if regular chat failed due to timeout
             if (useUnlimitedStream || error.message.includes('timeout') || error.message.includes('switching to unlimited')) {
-                console.log('🔄 Attempting unlimited streaming fallback...');
+                console.log('🔄 Attempting multi-part unlimited streaming fallback...');
                 
                 try {
                     aiMessageDiv.textContent = 'Switching to unlimited mode - AI is thinking deeply...';
                     
-                    const unlimitedResponse = await fetch('/.netlify/functions/chat-stream', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt })
-                    });
+                    // Use the new multi-part unlimited endpoint
+                    let fullResponse = '';
+                    let requestId = null;
+                    let attemptCount = 0;
+                    const maxAttempts = 3; // Allow up to 3 continuation requests
                     
-                    if (!unlimitedResponse.ok) {
-                        throw new Error(`Unlimited streaming failed: ${unlimitedResponse.status}`);
+                    while (attemptCount < maxAttempts) {
+                        attemptCount++;
+                        console.log(`🔄 Multi-part request attempt ${attemptCount}/${maxAttempts}`);
+                        
+                        const requestBody = { 
+                            prompt: prompt,
+                            requestId: requestId,
+                            continueFrom: fullResponse.length > 500 ? fullResponse.slice(-500) : fullResponse
+                        };
+                        
+                        aiMessageDiv.textContent = `Getting response part ${attemptCount}... (unlimited mode)`;
+                        
+                        const unlimitedResponse = await fetch('/.netlify/functions/chat-unlimited', {
+                            method: 'POST',
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'X-Request-ID': requestId || `multipart_${Date.now()}`
+                            },
+                            body: JSON.stringify(requestBody)
+                        });
+                        
+                        if (!unlimitedResponse.ok) {
+                            throw new Error(`Multi-part unlimited streaming failed: ${unlimitedResponse.status}`);
+                        }
+                        
+                        const unlimitedData = await unlimitedResponse.json();
+                        console.log(`✅ Multi-part attempt ${attemptCount} successful!`);
+                        
+                        // Append or set the response
+                        if (attemptCount === 1) {
+                            fullResponse = unlimitedData.response;
+                            requestId = unlimitedData.requestId;
+                        } else {
+                            // For continuation, append the new content
+                            fullResponse += '\n\n' + unlimitedData.response;
+                        }
+                        
+                        // Update display with current progress
+                        aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                        
+                        // Check if we need to continue
+                        if (!unlimitedData.needsContinuation || unlimitedData.length < 1000) {
+                            console.log('🎉 Multi-part response complete!');
+                            break;
+                        }
+                        
+                        // Brief pause between requests
+                        await new Promise(resolve => setTimeout(resolve, 1000));
                     }
                     
-                    const unlimitedData = await unlimitedResponse.json();
-                    console.log('✅ Unlimited streaming successful!');
-                    
-                    // Display the unlimited response
-                    aiMessageDiv.innerHTML = formatAIResponse(unlimitedData.response);
-                    
-                    // Add metadata about unlimited response
+                    // Add final metadata
                     const metaDiv = document.createElement('div');
                     metaDiv.className = 'response-meta';
                     metaDiv.style.color = '#4caf50';
-                    metaDiv.innerHTML = `<small>🚀 Unlimited streaming: ${(unlimitedData.duration/1000).toFixed(1)}s • ${unlimitedData.chunks} chunks • ${unlimitedData.length} characters</small>`;
+                    metaDiv.innerHTML = `<small>🚀 Multi-part unlimited streaming: ${attemptCount} parts • ${fullResponse.length} total characters</small>`;
                     aiMessageDiv.appendChild(metaDiv);
                     
                     aiMessageDiv.classList.remove('streaming');
                     return;
                     
                 } catch (unlimitedError) {
-                    console.error('❌ Unlimited streaming also failed:', unlimitedError);
+                    console.error('❌ Multi-part unlimited streaming also failed:', unlimitedError);
                     aiMessageDiv.innerHTML = formatAIResponse('Both regular and unlimited streaming failed. Please try again.');
                     aiMessageDiv.classList.remove('streaming');
                     return;

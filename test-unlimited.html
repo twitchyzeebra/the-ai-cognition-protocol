@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unlimited Streaming Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-box { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .loading { background-color: #fff3cd; border-color: #ffeaa7; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .response { max-height: 400px; overflow-y: auto; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>🚀 Unlimited Streaming Test</h1>
+    <p>This page tests the new unlimited streaming endpoint that bypasses Netlify's 28-second timeout.</p>
+    
+    <div class="test-box">
+        <h3>Test Regular Chat (28s limit)</h3>
+        <button onclick="testRegularChat()">Test Regular Endpoint</button>
+        <div id="regular-result"></div>
+    </div>
+    
+    <div class="test-box">
+        <h3>Test Unlimited Streaming</h3>
+        <button onclick="testUnlimitedChat()">Test Unlimited Endpoint</button>
+        <div id="unlimited-result"></div>
+    </div>
+    
+    <div class="test-box">
+        <h3>Test Auto-Fallback System</h3>
+        <button onclick="testFallbackSystem()">Test Smart Fallback</button>
+        <div id="fallback-result"></div>
+    </div>
+
+    <script>
+        async function testRegularChat() {
+            const resultDiv = document.getElementById('regular-result');
+            resultDiv.className = 'loading';
+            resultDiv.innerHTML = '<strong>Testing regular chat endpoint...</strong><br>This should work for responses under 28 seconds.';
+            
+            const startTime = Date.now();
+            
+            try {
+                const response = await fetch('/.netlify/functions/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        prompt: 'Please write a detailed explanation of quantum computing in exactly 200 words.' 
+                    })
+                });
+                
+                const duration = Date.now() - startTime;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.className = 'success';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Regular Chat Success</strong><br>
+                        Duration: ${(duration/1000).toFixed(1)}s<br>
+                        Length: ${data.text?.length || 0} characters<br>
+                        <div class="response">${data.text || JSON.stringify(data, null, 2)}</div>
+                    `;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                const duration = Date.now() - startTime;
+                resultDiv.className = 'error';
+                resultDiv.innerHTML = `
+                    <strong>❌ Regular Chat Failed</strong><br>
+                    Duration: ${(duration/1000).toFixed(1)}s<br>
+                    Error: ${error.message}
+                `;
+            }
+        }
+
+        async function testUnlimitedChat() {
+            const resultDiv = document.getElementById('unlimited-result');
+            resultDiv.className = 'loading';
+            resultDiv.innerHTML = '<strong>Testing unlimited streaming endpoint...</strong><br>This should handle any response length.';
+            
+            const startTime = Date.now();
+            
+            try {
+                const response = await fetch('/.netlify/functions/chat-stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        prompt: 'Write a comprehensive guide to machine learning that covers supervised learning, unsupervised learning, deep learning, neural networks, and practical applications. Make it detailed and thorough.' 
+                    })
+                });
+                
+                const duration = Date.now() - startTime;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.className = 'success';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Unlimited Streaming Success</strong><br>
+                        Duration: ${(duration/1000).toFixed(1)}s<br>
+                        Length: ${data.response?.length || 0} characters<br>
+                        Chunks: ${data.chunks || 'N/A'}<br>
+                        Unlimited: ${data.unlimited ? 'Yes' : 'No'}<br>
+                        <div class="response">${data.response || JSON.stringify(data, null, 2)}</div>
+                    `;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                const duration = Date.now() - startTime;
+                resultDiv.className = 'error';
+                resultDiv.innerHTML = `
+                    <strong>❌ Unlimited Streaming Failed</strong><br>
+                    Duration: ${(duration/1000).toFixed(1)}s<br>
+                    Error: ${error.message}
+                `;
+            }
+        }
+
+        async function testFallbackSystem() {
+            const resultDiv = document.getElementById('fallback-result');
+            resultDiv.className = 'loading';
+            resultDiv.innerHTML = '<strong>Testing smart fallback system...</strong><br>This simulates the main app behavior.';
+            
+            const startTime = Date.now();
+            
+            try {
+                // First try regular chat with a complex prompt that might timeout
+                resultDiv.innerHTML += '<br>🔄 Trying regular endpoint first...';
+                
+                let response = await fetch('/.netlify/functions/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        prompt: 'Write an extremely detailed 2000-word research paper on the history of artificial intelligence, including every major milestone, key researchers, breakthrough technologies, ethical considerations, current applications, and future predictions. Include specific dates, technical details, and comprehensive analysis.' 
+                    })
+                });
+                
+                let duration = Date.now() - startTime;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.className = 'success';
+                    resultDiv.innerHTML = `
+                        <strong>✅ Regular Chat Succeeded</strong><br>
+                        Duration: ${(duration/1000).toFixed(1)}s<br>
+                        Length: ${data.text?.length || 0} characters<br>
+                        No fallback needed!<br>
+                        <div class="response">${data.text || JSON.stringify(data, null, 2)}</div>
+                    `;
+                } else if (response.status === 500 || duration > 25000) {
+                    // Simulate fallback
+                    resultDiv.innerHTML += '<br>⚠️ Timeout detected, switching to unlimited...';
+                    
+                    response = await fetch('/.netlify/functions/chat-stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            prompt: 'Write an extremely detailed 2000-word research paper on the history of artificial intelligence, including every major milestone, key researchers, breakthrough technologies, ethical considerations, current applications, and future predictions. Include specific dates, technical details, and comprehensive analysis.' 
+                        })
+                    });
+                    
+                    duration = Date.now() - startTime;
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        resultDiv.className = 'success';
+                        resultDiv.innerHTML = `
+                            <strong>✅ Fallback to Unlimited Success</strong><br>
+                            Total Duration: ${(duration/1000).toFixed(1)}s<br>
+                            Length: ${data.response?.length || 0} characters<br>
+                            Method: Unlimited Streaming Fallback<br>
+                            <div class="response">${data.response || JSON.stringify(data, null, 2)}</div>
+                        `;
+                    } else {
+                        throw new Error(`Unlimited fallback failed: HTTP ${response.status}`);
+                    }
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+            } catch (error) {
+                const duration = Date.now() - startTime;
+                resultDiv.className = 'error';
+                resultDiv.innerHTML = `
+                    <strong>❌ Fallback System Failed</strong><br>
+                    Duration: ${(duration/1000).toFixed(1)}s<br>
+                    Error: ${error.message}
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -195,12 +195,32 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`(.+?)`/g, '<code>$1</code>');
     }
 
-    // Handle real-time streaming with Fetch API
-    async function sendStreamingMessage(prompt, aiMessageDiv) {
-        let fullResponse = '';
-        aiMessageDiv.textContent = ''; // Clear "AI is thinking..."
+    // Streaming sendMessage function using Server-Sent Events (SSE)
+    async function sendMessage(e) {
+        if (e) e.preventDefault();
+        const prompt = chatInput.value.trim();
+        if (!prompt) return;
 
+        // Add user message to chat log and history
+        addMessage(prompt, 'user-message');
+        conversationHistory.push({ role: "user", parts: [{ text: prompt }] });
+
+        chatInput.value = '';
+
+        // Start thinking timer and show loading
+        loadingIndicator.classList.remove('hidden');
+        startThinkingTimer();
+
+        // Add placeholder message that will be updated as the stream arrives
+        const aiMessageDiv = document.createElement('div');
+        aiMessageDiv.className = 'message ai-message streaming';
+        aiMessageDiv.innerHTML = '<span class="streaming-indicator">🌊</span> AI is thinking...';
+        chatLog.appendChild(aiMessageDiv);
+        chatLog.scrollTop = chatLog.scrollHeight;
+
+        let fullResponse = '';
         try {
+            console.log('🚀 Sending message to chat function (streaming)...');
             const response = await fetch('/.netlify/functions/chat', {
                 method: 'POST',
                 headers: {
@@ -212,35 +232,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 }),
             });
 
-            if (!response.ok) {
-                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+            if (!response.ok || !response.body) {
+                throw new Error(`Network error: ${response.status} ${response.statusText}`);
             }
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let firstChunk = true;
 
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) {
-                    console.log('✅ Stream finished.');
-                    break;
-                }
-
+                if (done) break;
                 buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n\n');
-                buffer = lines.pop(); // Keep the last, possibly incomplete line
-
+                let lines = buffer.split('\n\n');
+                buffer = lines.pop(); // keep last incomplete
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         const dataStr = line.substring(6);
-
                         if (dataStr === '[DONE]') {
-                            // Finalize the UI
                             aiMessageDiv.classList.remove('streaming');
                             stopThinkingTimer();
                             loadingIndicator.classList.add('hidden');
-                            
                             // Add metadata
                             const metaDiv = document.createElement('div');
                             metaDiv.className = 'response-meta';
@@ -249,14 +262,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             metaDiv.style.color = '#2196f3';
                             metaDiv.innerHTML = `<small>${metaText}</small>`;
                             aiMessageDiv.appendChild(metaDiv);
-                            
                             // Add final response to history
                             if (fullResponse) {
                                 conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
                             }
-                            return; // Exit the function
+                            return;
                         }
-
                         try {
                             const data = JSON.parse(dataStr);
                             if (data.error) {
@@ -264,61 +275,36 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                             if (data.text) {
                                 fullResponse += data.text;
+                                // Only remove the streaming indicator on first chunk
+                                if (firstChunk) {
+                                    aiMessageDiv.innerHTML = '';
+                                    firstChunk = false;
+                                }
                                 aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
                                 chatLog.scrollTop = chatLog.scrollHeight;
                             }
-                        } catch (e) {
-                            console.error('Error parsing SSE data:', e, 'Raw data:', dataStr);
+                        } catch (err) {
+                            console.error('Error parsing SSE data:', err, 'Raw data:', dataStr);
                         }
                     }
                 }
             }
         } catch (error) {
-            console.error('❌ Real-time streaming error:', error);
+            console.error('❌ Streaming error:', error);
             aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
-            // Clean up UI on error
             stopThinkingTimer();
             loadingIndicator.classList.add('hidden');
             aiMessageDiv.classList.remove('streaming');
         }
     }
 
-    async function sendMessage(e) {
-        if (e) e.preventDefault();
-        const prompt = chatInput.value.trim();
-        if (!prompt) return;
-
-        // Add user message to chat log and history
-        addMessage(prompt, 'user-message');
-        conversationHistory.push({ role: "user", parts: [{ text: prompt }] });
-
-        chatInput.value = '';
-        
-        // Start thinking timer and show loading
-        loadingIndicator.classList.remove('hidden');
-        startThinkingTimer();
-        
-        // Add placeholder message that will be updated
-        const aiMessageDiv = document.createElement('div');
-        aiMessageDiv.className = 'message ai-message streaming';
-        aiMessageDiv.textContent = 'AI is thinking...';
-        chatLog.appendChild(aiMessageDiv);
-        chatLog.scrollTop = chatLog.scrollHeight;
-        
-        // The new streaming function is async and handles its own errors.
-        // We don't need a surrounding try/catch here anymore.
-        await sendStreamingMessage(prompt, aiMessageDiv);
-    }
-
-    // Simulate typing effect
+    // Simulate typing effect (not used in streaming, but kept for possible future use)
     async function typeText(element, text) {
         const words = text.split(' ');
         element.textContent = '';
-        
         for (let i = 0; i < words.length; i++) {
             element.textContent += (i > 0 ? ' ' : '') + words[i];
             chatLog.scrollTop = chatLog.scrollHeight;
-            
             // Faster typing - show multiple words at once for longer responses
             if (words.length > 100 && i % 3 === 0) {
                 await new Promise(resolve => setTimeout(resolve, 50));

@@ -10,6 +10,7 @@ body {
 #container {
     display: flex;
     height: 100vh;
+    overflow: hidden;
 }
 
 #sidebar {
@@ -20,17 +21,300 @@ body {
     flex-direction: column;
     border-right: 1px solid #222;
     box-shadow: 2px 0 12px rgba(0,0,0,0.12);
+    transition: width 0.3s ease, min-width 0.3s ease;
+    position: relative;
+    min-width: 320px;
 }
-.sidebar-header {
-    padding: 24px 20px 12px 20px;
-    border-bottom: 1px solid #222;
+
+#sidebar.sidebar-collapsed {
+    width: 45px;
+    min-width: 45px;
 }
-.sidebar-header h1 {
+
+/* Mobile responsive collapsed width */
+@media (max-width: 768px) {
+    #sidebar.sidebar-collapsed {
+        width: 35px;
+        min-width: 35px;
+    }
+    
+    #sidebar {
+        width: 280px;
+        min-width: 280px;
+    }
+    
+    .sidebar-collapsed ~ #main-content {
+        padding-left: 55px; /* Adjust for smaller mobile collapsed width (35px + 20px) */
+        width: calc(100vw - 55px);
+    }
+    
+    #chat-section {
+        max-width: 90%;
+        padding: 20px 16px;
+        margin: 0 auto;
+    }
+    
+    .sidebar-collapsed ~ #main-content #chat-section {
+        max-width: 95%;
+        margin: 0 auto;
+    }
+    
+    /* Expand chat when document preview hidden on mobile */
+    #main-content.doc-preview-hidden #chat-section {
+        max-width: 98%;
+    }
+    
+    .sidebar-collapsed ~ #main-content.doc-preview-hidden #chat-section {
+        max-width: 99%;
+    }
+    
+    /* When chat is hidden on mobile, document preview expands */
+    #main-content.chat-hidden #doc-preview {
+        max-width: 98%;
+    }
+    
+    .sidebar-collapsed ~ #main-content.chat-hidden #doc-preview {
+        max-width: 99%;
+    }
+    
+    #doc-preview {
+        max-width: 90%;
+        margin: 0 auto;
+    }
+    
+    .sidebar-collapsed ~ #main-content #doc-preview {
+        max-width: 95%;
+        margin: 0 auto;
+    }
+}
+
+/* Medium screens */
+@media (min-width: 769px) and (max-width: 1366px) {
+    #chat-section {
+        max-width: 700px;
+    }
+    
+    .sidebar-collapsed ~ #main-content #chat-section {
+        max-width: 900px;
+    }
+    
+    /* Expand chat when document preview hidden on medium screens */
+    #main-content.doc-preview-hidden #chat-section {
+        max-width: 95%;
+    }
+    
+    .sidebar-collapsed ~ #main-content.doc-preview-hidden #chat-section {
+        max-width: 98%;
+    }
+    
+    /* When chat is hidden on medium screens, document preview expands */
+    #main-content.chat-hidden #doc-preview {
+        max-width: 95%;
+    }
+    
+    .sidebar-collapsed ~ #main-content.chat-hidden #doc-preview {
+        max-width: 98%;
+    }
+    
+    #doc-preview {
+        max-width: 700px;
+    }
+    
+    .sidebar-collapsed ~ #main-content #doc-preview {
+        max-width: 900px;
+    }
+}
+
+/* Large screens */
+@media (min-width: 1367px) {
+    #chat-section {
+        max-width: 800px;
+    }
+    
+    .sidebar-collapsed ~ #main-content #chat-section {
+        max-width: 1000px;
+    }
+    
+    /* Expand chat when document preview hidden on large screens */
+    #main-content.doc-preview-hidden #chat-section {
+        max-width: 96%;
+    }
+    
+    .sidebar-collapsed ~ #main-content.doc-preview-hidden #chat-section {
+        max-width: 98%;
+    }
+    
+    /* When chat is hidden on large screens, document preview expands */
+    #main-content.chat-hidden #doc-preview {
+        max-width: 96%;
+    }
+    
+    .sidebar-collapsed ~ #main-content.chat-hidden #doc-preview {
+        max-width: 98%;
+    }
+    
+    #doc-preview {
+        max-width: 800px;
+    }
+    
+    .sidebar-collapsed ~ #main-content #doc-preview {
+        max-width: 1000px;
+    }
+}
+
+.sidebar-toggle {
+    position: absolute;
+    top: 20px;
+    right: -15px;
+    z-index: 100;
+}
+
+#sidebar-toggle-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #ffb400;
+    color: #23252b;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: bold;
+    transition: transform 0.3s ease, background 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+#sidebar-toggle-btn:hover {
+    background: #eaeaea;
+    transform: scale(1.1);
+}
+
+.sidebar-collapsed #sidebar-toggle-btn .toggle-icon {
+    transform: rotate(180deg);
+}
+
+.sidebar-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: opacity 0.2s ease;
+}
+
+.sidebar-collapsed .sidebar-content {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+    padding: 15px 20px 20px 20px;
+    border-top: 1px solid #333;
+    background: rgba(24, 26, 32, 0.8);
+    margin-top: auto;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    transform: translateX(0);
+}
+
+.chat-toggle-section {
+    width: 100%;
+}
+
+.toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.toggle-label {
+    color: #ffb400;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.sidebar-collapsed .sidebar-footer {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* Sidebar Tabs */
+.sidebar-tabs {
+    display: flex;
+    flex-direction: column;
+    padding: 20px 20px 0 20px;
+    gap: 5px;
+}
+
+.tab-button {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: transparent;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    text-align: left;
+}
+
+.tab-button:hover {
+    background: #2a2c33;
+    color: #eaeaea;
+}
+
+.tab-button.active {
+    background: #ffb400;
+    color: #23252b;
+    font-weight: 600;
+}
+
+.tab-icon {
+    font-size: 16px;
+    min-width: 20px;
+}
+
+.tab-label {
+    white-space: nowrap;
+}
+
+/* Tab Content */
+.tab-content {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    padding: 20px;
+    overflow: hidden;
+}
+
+.tab-content.active {
+    display: flex;
+}
+
+.tab-header {
+    margin-bottom: 20px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 15px;
+}
+
+.tab-header h2 {
+    color: #ffb400;
     font-size: 1.3rem;
     margin: 0 0 12px 0;
-    color: #ffb400;
     letter-spacing: 1px;
 }
+
+/* Documents Tab Styling */
 #search-docs {
     width: 100%;
     padding: 8px 12px;
@@ -43,10 +327,135 @@ body {
     outline: none;
     box-shadow: 0 0 0 1px #333;
 }
+
+#search-docs:focus {
+    box-shadow: 0 0 0 2px #ffb400;
+}
+
 #chapters-list {
     flex: 1;
     overflow-y: auto;
-    padding: 16px 20px;
+}
+
+/* Settings Tab Styling */
+.settings-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.setting-item label {
+    color: #ffb400;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.setting-item select {
+    padding: 8px 12px;
+    background: #181a20;
+    color: #eaeaea;
+    border: 1px solid #333;
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+}
+
+.setting-item select:focus {
+    border-color: #ffb400;
+}
+
+/* Toggle Switch Styles */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    margin: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #333;
+    transition: 0.3s;
+    border-radius: 24px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #888;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: #ffb400;
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(26px);
+    background-color: #23252b;
+}
+
+.toggle-slider:hover {
+    box-shadow: 0 0 8px rgba(255, 180, 0, 0.3);
+}
+
+/* History Tab Styling */
+.history-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.history-placeholder {
+    text-align: center;
+    color: #888;
+    padding: 40px 20px;
+}
+
+.history-placeholder p {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+}
+
+.history-placeholder small {
+    font-size: 12px;
+}
+
+.clear-btn {
+    background: #ff4444;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.clear-btn:hover {
+    background: #ff6666;
 }
 .chapter {
     margin-bottom: 10px;
@@ -108,7 +517,33 @@ body {
     justify-content: center;
     background: #181a20;
     gap: 20px;
+    transition: all 0.3s ease;
+    padding: 20px;
+    width: calc(100vw - 320px); /* Account for sidebar width */
+    overflow-x: hidden;
+    margin-left: 0;
 }
+
+/* When document preview is hidden, chat takes full width */
+#main-content:has(#doc-preview.hidden) #chat-section,
+#doc-preview.hidden ~ #chat-section,
+#main-content.doc-preview-hidden #chat-section {
+    max-width: 95%; /* Expand to nearly full width when no document preview */
+}
+
+.sidebar-collapsed ~ #main-content {
+    margin-left: 0; /* Don't push content left */
+    padding-left: 65px; /* Space from collapsed sidebar (45px + 20px buffer) */
+    width: calc(100vw - 65px); /* Use viewport width minus padding */
+}
+
+/* When sidebar collapsed AND document preview hidden */
+.sidebar-collapsed ~ #main-content:has(#doc-preview.hidden) #chat-section,
+.sidebar-collapsed ~ #main-content #doc-preview.hidden ~ #chat-section,
+.sidebar-collapsed ~ #main-content.doc-preview-hidden #chat-section {
+    max-width: 98%; /* Even wider when sidebar collapsed and no document preview */
+}
+
 #chat-section {
     width: 100%;
     max-width: 600px;
@@ -119,7 +554,46 @@ body {
     display: flex;
     flex-direction: column;
     gap: 18px;
+    transition: max-width 0.3s ease;
+    margin: 0 auto;
 }
+
+.sidebar-collapsed ~ #main-content #chat-section {
+    max-width: 800px; /* Even wider when sidebar is collapsed */
+    margin: 0 auto; /* Ensure centering when collapsed */
+}
+
+/* Chat section visibility toggle */
+#chat-section.chat-hidden {
+    display: none !important;
+}
+
+/* When chat is hidden, document preview takes full width */
+#main-content.chat-hidden #doc-preview {
+    max-width: 95%;
+}
+
+.sidebar-collapsed ~ #main-content.chat-hidden #doc-preview {
+    max-width: 98%;
+}
+
+/* When both chat and doc preview are hidden, show a placeholder */
+#main-content.chat-hidden.doc-preview-hidden {
+    justify-content: center;
+    align-items: center;
+}
+
+#main-content.chat-hidden.doc-preview-hidden::before {
+    content: "📝 Select a document from the sidebar or enable chat in settings";
+    color: #888;
+    font-size: 18px;
+    text-align: center;
+    padding: 40px;
+    background: #23252b;
+    border-radius: 12px;
+    box-shadow: 0 4px 32px rgba(0,0,0,0.18);
+}
+
 #doc-preview {
     width: 100%;
     max-width: 600px;
@@ -130,6 +604,13 @@ body {
     display: flex;
     flex-direction: column;
     max-height: 80vh;
+    transition: max-width 0.3s ease;
+    margin: 0 auto;
+}
+
+.sidebar-collapsed ~ #main-content #doc-preview {
+    max-width: 800px; /* Match chat section width when collapsed */
+    margin: 0 auto; /* Ensure centering when collapsed */
 }
 #doc-preview-header {
     display: flex;
@@ -152,9 +633,35 @@ body {
     padding: 4px 8px;
     border-radius: 4px;
     transition: background 0.2s;
+    z-index: 1000; /* High z-index to ensure it's clickable */
+    position: relative;
+    min-width: 30px;
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none; /* Prevent text selection */
+    flex-shrink: 0; /* Prevent shrinking */
+    pointer-events: auto; /* Ensure it can be clicked */
+    touch-action: manipulation; /* Better touch handling */
 }
 #close-preview:hover {
     background: #333;
+    color: #fff;
+}
+#close-preview:active {
+    background: #555;
+    transform: scale(0.95);
+}
+
+/* Ensure the close button is always visible and clickable */
+#doc-preview-header {
+    position: relative;
+    z-index: 100;
+}
+
+#doc-preview-header button {
+    pointer-events: auto !important;
 }
 #doc-content {
     flex: 1;
@@ -218,6 +725,11 @@ body {
     padding: 18px;
     margin-bottom: 10px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    transition: max-height 0.3s ease;
+}
+
+.sidebar-collapsed ~ #main-content #chat-window {
+    max-height: 400px; /* Taller when sidebar is collapsed */
 }
 #chat-log {
     display: flex;
@@ -424,5 +936,5 @@ body {
     text-align: center;
 }
 .hidden {
-    display: none;
+    display: none !important;
 }

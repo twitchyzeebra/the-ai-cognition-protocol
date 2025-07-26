@@ -6,8 +6,125 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingIndicator = document.getElementById('loading-indicator');
     const thinkingTimer = document.getElementById('thinking-timer');
     
+    // Sidebar elements
+    const sidebar = document.getElementById('sidebar');
+    const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    // Document elements
+    const chaptersList = document.getElementById('chapters-list');
+    const searchDocs = document.getElementById('search-docs');
+    const docPreview = document.getElementById('doc-preview');
+    const docTitle = document.getElementById('doc-title');
+    const docContent = document.getElementById('doc-content');
+    const closePreview = document.getElementById('close-preview');
+    const mainContent = document.getElementById('main-content');
+    
+    // Settings elements
+    const chatToggle = document.getElementById('chat-toggle');
+    const chatSection = document.getElementById('chat-section');
+    
+    // Debug: Check if close button was found
+    if (!closePreview) {
+        console.error('Close preview button not found in DOM');
+    } else {
+        console.log('Close preview button found successfully');
+        console.log('Close button element:', closePreview);
+        console.log('Close button innerHTML:', closePreview.innerHTML);
+    }
+    
+    // Helper function to update layout based on document preview visibility
+    function updateLayout() {
+        const isHidden = docPreview.classList.contains('hidden');
+        console.log('Updating layout, doc preview hidden:', isHidden);
+        
+        if (isHidden) {
+            mainContent.classList.add('doc-preview-hidden');
+            console.log('Added doc-preview-hidden class');
+        } else {
+            mainContent.classList.remove('doc-preview-hidden');
+            console.log('Removed doc-preview-hidden class');
+        }
+    }
+    
+    // Ensure document preview starts hidden
+    function ensureInitialState() {
+        console.log('Setting initial state - hiding document preview');
+        docPreview.classList.add('hidden');
+        updateLayout();
+    }
+    
+    // Chat toggle functionality
+    function toggleChat() {
+        const isVisible = chatToggle.checked;
+        console.log('💬 Toggling chat visibility:', isVisible);
+        
+        if (isVisible) {
+            chatSection.classList.remove('chat-hidden');
+            mainContent.classList.remove('chat-hidden');
+        } else {
+            chatSection.classList.add('chat-hidden');
+            mainContent.classList.add('chat-hidden');
+        }
+        
+        // Save state to localStorage
+        localStorage.setItem('chatVisible', isVisible);
+        updateLayout();
+    }
+    
+    // Load saved chat state
+    function loadChatState() {
+        const saved = localStorage.getItem('chatVisible');
+        const isVisible = saved !== null ? saved === 'true' : true; // Default to visible
+        
+        chatToggle.checked = isVisible;
+        toggleChat();
+    }
+    
     let thinkingInterval = null;
     let thinkingStartTime = null;
+    let selectedChapter = null;
+
+    // Sidebar functionality
+    function toggleSidebar() {
+        sidebar.classList.toggle('sidebar-collapsed');
+        const isCollapsed = sidebar.classList.contains('sidebar-collapsed');
+        
+        // Save state to localStorage
+        localStorage.setItem('sidebarCollapsed', isCollapsed);
+    }
+
+    function switchTab(targetTab) {
+        // Remove active class from all buttons and contents
+        tabButtons.forEach(btn => btn.classList.remove('active'));
+        tabContents.forEach(content => content.classList.remove('active'));
+
+        // Add active class to clicked button and corresponding content
+        const clickedButton = document.querySelector(`[data-tab="${targetTab}"]`);
+        const targetContent = document.getElementById(`${targetTab}-tab`);
+        
+        if (clickedButton && targetContent) {
+            clickedButton.classList.add('active');
+            targetContent.classList.add('active');
+        }
+    }
+
+    // Event listeners for sidebar
+    sidebarToggleBtn.addEventListener('click', toggleSidebar);
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const targetTab = button.getAttribute('data-tab');
+            switchTab(targetTab);
+        });
+    });
+
+    // Restore sidebar state from localStorage
+    const savedSidebarState = localStorage.getItem('sidebarCollapsed');
+    if (savedSidebarState === 'true') {
+        sidebar.classList.add('sidebar-collapsed');
+    }
 
     function startThinkingTimer() {
         thinkingStartTime = Date.now();
@@ -215,14 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Document sidebar logic
-    const chaptersList = document.getElementById('chapters-list');
-    const searchDocs = document.getElementById('search-docs');
-    const docPreview = document.getElementById('doc-preview');
-    const docTitle = document.getElementById('doc-title');
-    const docContent = document.getElementById('doc-content');
-    const closePreview = document.getElementById('close-preview');
     let chaptersData = [];
-    let selectedChapter = null;
 
     // Simple Markdown parser for basic formatting
     function parseMarkdown(text) {
@@ -249,12 +359,36 @@ document.addEventListener('DOMContentLoaded', () => {
             docContent.textContent = content;
         }
         docPreview.classList.remove('hidden');
+        updateLayout(); // Update layout when showing document
     }
 
-    // Close document preview
-    closePreview.addEventListener('click', () => {
+    // SIMPLIFIED CLOSE BUTTON FUNCTIONALITY
+    window.closeDocumentPreview = function() {
+        console.log('🔴 CLOSE FUNCTION CALLED');
         docPreview.classList.add('hidden');
-    });
+        updateLayout();
+        console.log('✅ Document preview should now be hidden');
+    };
+    
+    // Simple event handler
+    if (closePreview) {
+        console.log('📌 Setting up close button event...');
+        closePreview.onclick = function() {
+            console.log('🎯 CLOSE BUTTON CLICKED!');
+            closeDocumentPreview();
+            return false;
+        };
+        console.log('✅ Close button event handler attached');
+    }
+
+    // Chat toggle functionality
+    if (chatToggle) {
+        console.log('💬 Setting up chat toggle...');
+        chatToggle.addEventListener('change', toggleChat);
+        console.log('✅ Chat toggle event handler attached');
+    } else {
+        console.error('Chat toggle element not found!');
+    }
 
     // Fetch document content
     async function fetchDocContent(url, filename) {
@@ -345,5 +479,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     fetchChapters();
+    
+    // Initialize proper state on page load
+    setTimeout(() => {
+        console.log('🚀 Initializing application state...');
+        ensureInitialState();
+        loadChatState(); // Load saved chat visibility state
+        console.log('✅ Initial state complete');
+    }, 100);
 });
             

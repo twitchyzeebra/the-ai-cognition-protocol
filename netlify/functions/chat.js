@@ -2,12 +2,12 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { Readable } = require('stream');
 
 const API_KEY = process.env.GEMINI_API_KEY;
 
-// Decryption function (matches encrypt-prompt.js)
+// Decryption function
 function getKey(keyHex) {
-    // Always treat key as a 64-char hex string
     if (!/^[a-fA-F0-9]{64}$/.test(keyHex)) {
         throw new Error('Encryption key must be a 64-character hex string');
     }
@@ -34,27 +34,23 @@ function decryptSystemPrompt(encryptedData, password) {
     }
 }
 
-// True streaming function with keep-alive to prevent timeouts
-async function getRealtimeStreamResponse(model, prompt, clientIP, streamController) {
+// True streaming function using Node.js Readable stream
+async function getRealtimeStreamResponse(model, prompt, clientIP, stream) {
     const startTime = Date.now();
-    const encoder = new TextEncoder();
 
     try {
         console.log(`[${clientIP}] Starting REAL-TIME streaming response...`);
         
-        // Generate content with streaming
         const result = await model.generateContentStream(prompt);
         
         let fullText = '';
         let chunkCount = 0;
         
-        // Set up a keep-alive interval to prevent connection timeout
         const keepAliveInterval = setInterval(() => {
-            streamController.enqueue(encoder.encode(':keep-alive\n\n'));
+            stream.push(':keep-alive\n\n');
             console.log(`[${clientIP}] Sent keep-alive ping.`);
-        }, 15000); // Send a ping every 15 seconds
+        }, 15000);
 
-        // Process chunks as they come and push them to the stream
         for await (const chunk of result.stream) {
             const chunkText = chunk.text();
             if (chunkText) {
@@ -67,13 +63,10 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, streamControll
                     totalLength: fullText.length,
                     elapsed: Date.now() - startTime
                 };
-                
-                // Send data as a Server-Sent Event (SSE)
-                streamController.enqueue(encoder.encode(`data: ${JSON.stringify(eventData)}\n\n`));
+                stream.push(`data: ${JSON.stringify(eventData)}\n\n`);
             }
         }
         
-        // Stop the keep-alive and signal completion
         clearInterval(keepAliveInterval);
         const finalEvent = {
             done: true,
@@ -81,7 +74,7 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, streamControll
             totalLength: fullText.length,
             totalChunks: chunkCount
         };
-        streamController.enqueue(encoder.encode(`data: ${JSON.stringify(finalEvent)}\n\n`));
+        stream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
         
         console.log(`[${clientIP}] Real-time streaming completed: ${Date.now() - startTime}ms`);
 
@@ -91,46 +84,28 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, streamControll
             error: 'Error during streaming.',
             message: error.message
         };
-        streamController.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
+        stream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
     } finally {
-        // Close the stream
-        streamController.close();
+        stream.push(null); // End the stream
     }
 }
 
-// Rate limiting storage (in-memory for simplicity)
+// Rate limiting
 const rateLimitStore = new Map();
-const RATE_LIMIT = 4; // requests per minute
-const RATE_WINDOW = 60 * 1000; // 1 minute in milliseconds
-const MAX_STORED_IPS = 1000; // Prevent memory bloat
+const RATE_LIMIT = 4;
+const RATE_WINDOW = 60 * 1000;
 
 function checkRateLimit(clientIP) {
     const now = Date.now();
-    
-    // Clean up old entries to prevent memory bloat
-    if (rateLimitStore.size > MAX_STORED_IPS) {
-        const cutoff = now - RATE_WINDOW;
-        for (const [ip, data] of rateLimitStore.entries()) {
-            if (data.resetTime < cutoff) {
-                rateLimitStore.delete(ip);
-            }
-        }
-    }
-    
     const clientData = rateLimitStore.get(clientIP) || { count: 0, resetTime: now + RATE_WINDOW };
     
-    // Reset if window has passed
     if (now > clientData.resetTime) {
         clientData.count = 0;
         clientData.resetTime = now + RATE_WINDOW;
     }
     
-    // Check if rate limit exceeded
-    if (clientData.count >= RATE_LIMIT) {
-        return false;
-    }
+    if (clientData.count >= RATE_LIMIT) return false;
     
-    // Increment counter
     clientData.count++;
     rateLimitStore.set(clientIP, clientData);
     return true;
@@ -139,79 +114,63 @@ function checkRateLimit(clientIP) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-// Bypass Netlify timeout with chunked streaming response
-async function streamResponse(model, prompt, clientIP, startTime) {
+exports.handler = async (event) => {
+    const clientIP = event.headers['x-forwarded-for'] || 'unknown';
+
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    if (!checkRateLimit(clientIP)) {
+        return {
+            statusCode: 429,
+            body: JSON.stringify({ error: 'Rate limit exceeded.' }),
+            headers: { 'Content-Type': 'application/json' }
+        };
+    }
+
+    if (!API_KEY) {
+        console.error('GEMINI_API_KEY missing');
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: "Server configuration error." }),
+            headers: { 'Content-Type': 'application/json' }
+        };
+    }
+
     try {
-        console.log(`[${clientIP}] Starting unlimited streaming response (bypassing Netlify timeout)...`);
-        
-        // Generate content with streaming - no timeout limits
-        const result = await model.generateContentStream(prompt);
-        
-        let fullText = '';
-        let chunkCount = 0;
-        let lastUpdate = Date.now();
-        
-        // Process each chunk as it arrives - unlimited time approach
-        for await (const chunk of result.stream) {
-            const chunkText = chunk.text();
-            if (chunkText) {
-                fullText += chunkText;
-                chunkCount++;
-                
-                const elapsed = Date.now() - startTime;
-                
-                // Log progress frequently for long responses
-                if (chunkCount % 5 === 0 || (Date.now() - lastUpdate) > 2000) {
-                    console.log(`[${clientIP}] Processing chunk ${chunkCount}, length: ${fullText.length}, elapsed: ${elapsed}ms`);
-                    lastUpdate = Date.now();
+        const { prompt: userPrompt } = JSON.parse(event.body || '{}');
+
+        if (!userPrompt) {
+            return { 
+                statusCode: 400, 
+                body: JSON.stringify({ error: 'Bad Request: Valid prompt required.' }),
+                headers: { 'Content-Type': 'application/json' }
+            };
+        }
+
+        let SECRET_SYSTEM_PROMPT = "You are a helpful AI assistant.";
+        try {
+            const encryptedFilePath = path.join(__dirname, '../../system-prompt-encrypted.json');
+            if (fs.existsSync(encryptedFilePath)) {
+                const encryptedFile = fs.readFileSync(encryptedFilePath, 'utf8');
+                const encryptedData = JSON.parse(encryptedFile);
+                const encryptionKey = process.env.SYSTEM_PROMPT_KEY;
+                if (encryptedData?.data && encryptionKey) {
+                    const decrypted = decryptSystemPrompt(encryptedData.data, encryptionKey);
+                    if (decrypted) SECRET_SYSTEM_PROMPT = decrypted;
                 }
             }
+        } catch (error) {
+            console.warn('Could not load encrypted system prompt:', error.message);
         }
-        
-        const duration = Date.now() - startTime;
-        console.log(`[${clientIP}] Unlimited streaming completed in ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars`);
-        
-        return JSON.stringify({ 
-            text: fullText,
-            streaming: true,
-            duration: duration,
-            chunks: chunkCount,
-            model: "gemini-2.5-pro",
-            detailedResponse: true,
-            unlimitedTime: true
-        });
-        
-    } catch (error) {
-        console.error(`[${clientIP}] Streaming error:`, error.message);
-        return JSON.stringify({ 
-            error: error.message,
-            text: 'Sorry, there was an error generating the response.',
-            streaming: false
-        });
-    }
-}
-
-exports.handler = async (event) => {
-    // ... (keep existing rate limiting and validation logic)
-
-    try {
-        const body = JSON.parse(event.body || '{}');
-        const { prompt: userPrompt } = body;
-
-        // ... (keep existing prompt validation)
-
-        // Get system prompt
-        let SECRET_SYSTEM_PROMPT = "You are a helpful AI assistant...";
-        // ... (keep existing system prompt decryption logic)
 
         const fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${userPrompt}\nAI:`;
 
-        // Use true streaming with Server-Sent Events (SSE)
-        const stream = new ReadableStream({
-            start(controller) {
-                getRealtimeStreamResponse(model, fullPrompt, clientIP, controller);
-            }
-        });
+        const stream = new Readable({ read() {} });
+        
+        // Start generating the response without awaiting it
+        getRealtimeStreamResponse(model, fullPrompt, clientIP, stream);
 
         return {
             statusCode: 200,
@@ -220,12 +179,17 @@ exports.handler = async (event) => {
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type'
             },
-            body: stream
+            isBase64Encoded: false,
+            body: stream,
         };
 
     } catch (error) {
-        // ... (keep existing error handling)
+        console.error(`[${clientIP}] Handler error:`, error.message);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Internal Server Error' }),
+            headers: { 'Content-Type': 'application/json' }
+        };
     }
 };

@@ -284,13 +284,18 @@ document.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(aiMessageDiv);
         chatLog.scrollTop = chatLog.scrollHeight;
         
-        // Use real-time SSE streaming to prevent timeouts
-        await sendStreamingMessage(prompt, aiMessageDiv);
-        
-        // Clean up
-        aiMessageDiv.classList.remove('streaming');
-        stopThinkingTimer();
-        loadingIndicator.classList.add('hidden');
+        try {
+            // Use the new real-time streaming function
+            await sendStreamingMessage(prompt, aiMessageDiv);
+        } catch (error) {
+            console.error('❌ Top-level sendMessage error:', error);
+            aiMessageDiv.innerHTML = formatAIResponse('An unexpected error occurred. Please check the console and try again.');
+        } finally {
+            // Clean up after streaming is complete or has failed
+            aiMessageDiv.classList.remove('streaming');
+            stopThinkingTimer();
+            loadingIndicator.classList.add('hidden');
+        }
     }
 
     // Simulate typing effect

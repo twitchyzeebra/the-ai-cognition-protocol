@@ -195,80 +195,92 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`(.+?)`/g, '<code>$1</code>');
     }
 
-    // Handle real-time streaming with Server-Sent Events (SSE)
-    function sendStreamingMessage(prompt, aiMessageDiv) {
+    // Handle real-time streaming with Fetch API
+    async function sendStreamingMessage(prompt, aiMessageDiv) {
         let fullResponse = '';
         aiMessageDiv.textContent = ''; // Clear "AI is thinking..."
 
-        // Encode parameters for the GET request
-        const encodedPrompt = encodeURIComponent(prompt);
-        const encodedHistory = encodeURIComponent(JSON.stringify(conversationHistory));
-        
-        // Use EventSource for a persistent connection
-        const eventSource = new EventSource(`/.netlify/functions/chat?prompt=${encodedPrompt}&history=${encodedHistory}`);
+        try {
+            const response = await fetch('/.netlify/functions/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    prompt: prompt,
+                    history: conversationHistory
+                }),
+            });
 
-        eventSource.onopen = () => {
-            console.log('✅ SSE connection established.');
-        };
-
-        eventSource.onmessage = (event) => {
-            // The server will send a special message when it's done
-            if (event.data === '[DONE]') {
-                eventSource.close();
-                
-                // Add the final response to history
-                if (fullResponse) {
-                    conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
-                }
-                
-                // Clean up UI
-                aiMessageDiv.classList.remove('streaming');
-                stopThinkingTimer();
-                loadingIndicator.classList.add('hidden');
-                
-                // Add metadata
-                const metaDiv = document.createElement('div');
-                metaDiv.className = 'response-meta';
-                const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
-                const metaText = `Generated in ${elapsed}s • 🌊 Real-time stream`;
-                metaDiv.style.color = '#2196f3';
-                metaDiv.innerHTML = `<small>${metaText}</small>`;
-                aiMessageDiv.appendChild(metaDiv);
-                
-                return;
+            if (!response.ok) {
+                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
             }
 
-            try {
-                const data = JSON.parse(event.data);
-                
-                if (data.error) {
-                    console.error('❌ Server-side error:', data.error);
-                    aiMessageDiv.innerHTML = formatAIResponse(`Sorry, an error occurred: ${data.error}`);
-                    eventSource.close();
-                    return;
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log('✅ Stream finished.');
+                    break;
                 }
 
-                if (data.text) {
-                    fullResponse += data.text;
-                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-                    chatLog.scrollTop = chatLog.scrollHeight;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop(); // Keep the last, possibly incomplete line
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.substring(6);
+
+                        if (dataStr === '[DONE]') {
+                            // Finalize the UI
+                            aiMessageDiv.classList.remove('streaming');
+                            stopThinkingTimer();
+                            loadingIndicator.classList.add('hidden');
+                            
+                            // Add metadata
+                            const metaDiv = document.createElement('div');
+                            metaDiv.className = 'response-meta';
+                            const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
+                            const metaText = `Generated in ${elapsed}s • 🌊 Real-time stream`;
+                            metaDiv.style.color = '#2196f3';
+                            metaDiv.innerHTML = `<small>${metaText}</small>`;
+                            aiMessageDiv.appendChild(metaDiv);
+                            
+                            // Add final response to history
+                            if (fullResponse) {
+                                conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
+                            }
+                            return; // Exit the function
+                        }
+
+                        try {
+                            const data = JSON.parse(dataStr);
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            if (data.text) {
+                                fullResponse += data.text;
+                                aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                                chatLog.scrollTop = chatLog.scrollHeight;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE data:', e, 'Raw data:', dataStr);
+                        }
+                    }
                 }
-            } catch (e) {
-                console.error('Error parsing SSE data:', e, 'Raw data:', event.data);
             }
-        };
-
-        eventSource.onerror = (err) => {
-            console.error('❌ EventSource failed:', err);
-            aiMessageDiv.innerHTML = formatAIResponse('Sorry, the connection to the server was lost. Please try again.');
-            
-            // Clean up UI
+        } catch (error) {
+            console.error('❌ Real-time streaming error:', error);
+            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
+            // Clean up UI on error
             stopThinkingTimer();
             loadingIndicator.classList.add('hidden');
             aiMessageDiv.classList.remove('streaming');
-            
-            eventSource.close();
-        };
+        }
     }
 
     async function sendMessage(e) {
@@ -293,9 +305,9 @@ document.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(aiMessageDiv);
         chatLog.scrollTop = chatLog.scrollHeight;
         
-        // Call the new streaming function. Note: No await, no try/catch here.
-        // The EventSource handles its own lifecycle and errors.
-        sendStreamingMessage(prompt, aiMessageDiv);
+        // The new streaming function is async and handles its own errors.
+        // We don't need a surrounding try/catch here anymore.
+        await sendStreamingMessage(prompt, aiMessageDiv);
     }
 
     // Simulate typing effect

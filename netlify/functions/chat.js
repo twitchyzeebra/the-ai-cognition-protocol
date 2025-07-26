@@ -54,14 +54,15 @@ exports.handler = stream(async (event, context) => {
         context.callbackWaitsForEmptyEventLoop = false;
     }
 
-    // EventSource sends GET requests, so we must handle them.
-    if (event.httpMethod !== 'GET') {
+    // The frontend now sends POST requests with a JSON body.
+    if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
     try {
-        // Parameters are now in the query string
-        const { prompt, history: historyStr } = event.queryStringParameters;
+        // Parse the prompt and history from the request body
+        const body = JSON.parse(event.body);
+        const { prompt, history } = body;
 
         if (!prompt) {
             return { 
@@ -70,25 +71,12 @@ exports.handler = stream(async (event, context) => {
             };
         }
 
-        let history = [];
-        if (historyStr) {
-            try {
-                // Decode and parse the history from the query string
-                history = JSON.parse(decodeURIComponent(historyStr));
-            } catch (e) {
-                console.error("Failed to parse history:", e);
-                // Return a clear error if history is malformed
-                return { 
-                    statusCode: 400, 
-                    body: JSON.stringify({ error: 'Bad Request: Invalid history format.' }),
-                };
-            }
-        }
+        // History is already a parsed object from the body, no need for decode/parse.
 
         const readableStream = new Readable({ read() {} });
         
         // Start the AI stream in the background. The handler returns the stream immediately.
-        streamAIResponse(decodeURIComponent(prompt), history, readableStream);
+        streamAIResponse(prompt, history || [], readableStream);
 
         return {
             statusCode: 200,

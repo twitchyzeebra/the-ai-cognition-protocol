@@ -243,6 +243,12 @@ document.addEventListener('DOMContentLoaded', () => {
                             try {
                                 const data = JSON.parse(jsonString);
 
+                                // Handle connection confirmation
+                                if (data.event === 'connection-established') {
+                                    console.log('🤝 Connection established with server.');
+                                    continue; // Move to the next line
+                                }
+
                                 if (data.done) {
                                     // Add final metadata
                                     const metaDiv = document.createElement('div');

@@ -18,10 +18,9 @@
   functionsTimeout = "10m"
   framework = "#static"
 
-# Load environment variables for local development
+# REMOVE THE HARDCODED KEY - Set via Netlify dashboard instead
 [context.dev.environment]
   NODE_ENV = "development"
-  SYSTEM_PROMPT_KEY = "0190e991e45d7f8004f4655ed47d283fb2baf1feac6cc08787f85c90546f85d2"
 
 [context.production.environment]
   NODE_ENV = "production"

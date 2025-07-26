@@ -205,8 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                prompt, 
-                history: conversationHistory // Send the conversation history
+                prompt: prompt
             })
         });
 

@@ -7,13 +7,11 @@
   
 [functions]
   directory = "netlify/functions"
+  node_bundler = "esbuild"
   included_files = ["docs/**/*", "system-prompt-encrypted.json"]
-  
-[functions.chat]
-  timeout = "10m"
 
-[functions.list-docs]
-  timeout = "1m"
+[functions."*"]
+  timeout = "10m"
 
 # Local development settings
 [dev]

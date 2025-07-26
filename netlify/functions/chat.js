@@ -34,7 +34,7 @@ function decryptSystemPrompt(encryptedData, password) {
     }
 }
 
-// Progressive streaming function - no timeouts, full responses
+// Progressive streaming with timeout prevention
 async function getProgressiveStreamResponse(model, prompt, clientIP) {
     const startTime = Date.now();
     
@@ -46,9 +46,10 @@ async function getProgressiveStreamResponse(model, prompt, clientIP) {
         
         let fullText = '';
         let chunkCount = 0;
-        let lastKeepAlive = Date.now();
+        let lastActivity = Date.now();
+        const chunks = [];
         
-        // Process chunks as they come - with keepalive to prevent timeout
+        // Process chunks as they come - collect them for sending
         for await (const chunk of result.stream) {
             const elapsed = Date.now() - startTime;
             
@@ -56,11 +57,29 @@ async function getProgressiveStreamResponse(model, prompt, clientIP) {
             if (chunkText) {
                 fullText += chunkText;
                 chunkCount++;
+                lastActivity = Date.now();
                 
-                // Send keepalive log every 8 seconds to prevent Netlify timeout
-                if (Date.now() - lastKeepAlive > 8000) {
-                    console.log(`[${clientIP}] Progressive keepalive: ${chunkCount} chunks, ${fullText.length} chars, ${elapsed}ms`);
-                    lastKeepAlive = Date.now();
+                // Store chunk data for potential multi-part sending
+                chunks.push({
+                    text: chunkText,
+                    fullText: fullText,
+                    chunkNumber: chunkCount,
+                    elapsed: elapsed,
+                    totalLength: fullText.length
+                });
+                
+                // Check if we're approaching timeout (20 seconds)
+                if (elapsed > 20000) {
+                    console.log(`[${clientIP}] Approaching timeout at ${elapsed}ms, preparing to return partial response...`);
+                    return {
+                        success: true,
+                        text: fullText,
+                        duration: elapsed,
+                        chunks: chunkCount,
+                        isPartial: true,
+                        needsContinuation: true,
+                        progressive: true
+                    };
                 }
                 
                 // Log progress every 10 chunks
@@ -78,8 +97,9 @@ async function getProgressiveStreamResponse(model, prompt, clientIP) {
             text: fullText,
             duration: duration,
             chunks: chunkCount,
-            length: fullText.length,
-            streaming: true
+            isPartial: false,
+            needsContinuation: false,
+            progressive: true
         };
         
     } catch (error) {

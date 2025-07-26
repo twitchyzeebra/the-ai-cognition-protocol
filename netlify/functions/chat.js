@@ -41,26 +41,26 @@ function decryptSystemPrompt(encryptedData, password) {
 async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream) {
     return new Promise(async (resolve, reject) => {
         const startTime = Date.now();
-
+        let keepAliveInterval;
         try {
-            console.log(`[${clientIP}] Starting REAL-TIME streaming response...`);
-            
-            const result = await model.generateContentStream(prompt);
-            
-            let fullText = '';
-            let chunkCount = 0;
-            
-            const keepAliveInterval = setInterval(() => {
+            // Start keep-alive pings immediately
+            keepAliveInterval = setInterval(() => {
                 readableStream.push(':keep-alive\n\n');
                 console.log(`[${clientIP}] Sent keep-alive ping.`);
             }, 15000);
+
+            console.log(`[${clientIP}] Starting REAL-TIME streaming response...`);
+            const result = await model.generateContentStream(prompt);
+
+            let fullText = '';
+            let chunkCount = 0;
 
             for await (const chunk of result.stream) {
                 const chunkText = chunk.text();
                 if (chunkText) {
                     fullText += chunkText;
                     chunkCount++;
-                    
+
                     const eventData = {
                         text: chunkText,
                         chunk: chunkCount,
@@ -70,8 +70,7 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream
                     readableStream.push(`data: ${JSON.stringify(eventData)}\n\n`);
                 }
             }
-            
-            clearInterval(keepAliveInterval);
+
             const finalEvent = {
                 done: true,
                 duration: Date.now() - startTime,
@@ -79,7 +78,7 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream
                 totalChunks: chunkCount
             };
             readableStream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
-            
+
             console.log(`[${clientIP}] Real-time streaming completed: ${Date.now() - startTime}ms`);
             resolve(); // Resolve the promise when streaming is done
 
@@ -92,6 +91,7 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream
             readableStream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
             reject(error); // Reject the promise on error
         } finally {
+            if (keepAliveInterval) clearInterval(keepAliveInterval);
             readableStream.push(null); // End the stream
         }
     });

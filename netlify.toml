@@ -1,20 +1,32 @@
 [build]
   publish = "."
+  command = ""
+  
+[build.environment]
+  NODE_ENV = "production"
   
 [functions]
   directory = "netlify/functions"
   included_files = ["docs/**/*", "system-prompt-encrypted.json"]
   
 [functions.chat]
-  timeout = 600
+  timeout = "10m"
+
+[functions.list-docs]
+  timeout = "1m"
 
 # Local development settings
 [dev]
-  functionsTimeout = 600
+  functionsTimeout = "10m"
+  framework = "#static"
 
 # Load environment variables for local development
 [context.dev.environment]
+  NODE_ENV = "development"
   SYSTEM_PROMPT_KEY = "0190e991e45d7f8004f4655ed47d283fb2baf1feac6cc08787f85c90546f85d2"
+
+[context.production.environment]
+  NODE_ENV = "production"
 
 [[redirects]]
   from = "/api/chat"

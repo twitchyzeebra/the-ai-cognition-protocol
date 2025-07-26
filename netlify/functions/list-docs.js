@@ -1,9 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 
-const fs = require('fs');
-const path = require('path');
-
 // Find the docs directory - handle both local dev and production
 const getDocsDir = () => {
     // Try multiple possible paths for docs directory
@@ -29,32 +26,65 @@ const getDocsDir = () => {
 function listFiles(dir, baseUrl = 'docs') {
     const result = [];
     if (!fs.existsSync(dir)) return result;
-    const items = fs.readdirSync(dir, { withFileTypes: true });
-    items.forEach(item => {
-        if (item.isDirectory()) {
-            result.push({
-                type: 'folder',
-                name: item.name,
-                children: listFiles(path.join(dir, item.name), `${baseUrl}/${item.name}`)
-            });
-        } else {
-            result.push({
-                type: 'file',
-                name: item.name,
-                url: `${baseUrl}/${item.name}`
-            });
-        }
-    });
+    
+    try {
+        const items = fs.readdirSync(dir, { withFileTypes: true });
+        items.forEach(item => {
+            // Ensure item and item.name exist
+            if (!item || !item.name) {
+                console.warn('Skipping invalid item:', item);
+                return;
+            }
+            
+            if (item.isDirectory()) {
+                result.push({
+                    type: 'folder',
+                    name: item.name,
+                    children: listFiles(path.join(dir, item.name), `${baseUrl}/${item.name}`)
+                });
+            } else {
+                result.push({
+                    type: 'file',
+                    name: item.name,
+                    url: `${baseUrl}/${item.name}`
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Error reading directory:', dir, error.message);
+    }
+    
     return result;
 }
 
 exports.handler = async (event) => {
+    const startTime = Date.now();
+    
+    // Ensure event and headers exist
+    if (!event) {
+        console.error('Event object is undefined');
+        return {
+            statusCode: 500,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ error: 'Internal server error' })
+        };
+    }
+    
+    const headers = event.headers || {};
+    const clientIP = headers['x-forwarded-for'] || headers['client-ip'] || 'unknown';
+    
+    console.log(`[${new Date().toISOString()}] List-docs request from ${clientIP}`);
     console.log('Runtime environment:', {
         __dirname,
         'process.cwd()': process.cwd(),
         'process.env.AWS_LAMBDA_FUNCTION_NAME': process.env.AWS_LAMBDA_FUNCTION_NAME,
         'process.env.NETLIFY': process.env.NETLIFY
     });
+
+    try {
     
     const docsDir = getDocsDir();
     console.log("Docs directory resolved to:", docsDir);
@@ -78,6 +108,9 @@ exports.handler = async (event) => {
         console.log("Using fallback docs structure:", structure);
     }
     
+    const duration = Date.now() - startTime;
+    console.log(`[${clientIP}] List-docs completed in ${duration}ms, found ${structure.length} items`);
+    
     return {
         statusCode: 200,
         headers: {
@@ -87,6 +120,23 @@ exports.handler = async (event) => {
         },
         body: JSON.stringify(structure)
     };
+    
+    } catch (error) {
+        const duration = Date.now() - startTime;
+        console.error(`[${clientIP}] Error after ${duration}ms:`, error.message);
+        console.error('Stack trace:', error.stack);
+        
+        return {
+            statusCode: 500,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ 
+                error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+            })
+        };
+    }
 };
   
 

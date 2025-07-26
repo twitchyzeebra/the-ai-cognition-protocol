@@ -39,56 +39,195 @@ if (!API_KEY) {
     console.error("Missing GEMINI_API_KEY environment variable.");
 }
 
+// Rate limiting storage (in-memory for simplicity)
+const rateLimitStore = new Map();
+const RATE_LIMIT = 4; // requests per minute
+const RATE_WINDOW = 60 * 1000; // 1 minute in milliseconds
+const MAX_STORED_IPS = 1000; // Prevent memory bloat
+
+function checkRateLimit(clientIP) {
+    const now = Date.now();
+    
+    // Clean up old entries to prevent memory bloat
+    if (rateLimitStore.size > MAX_STORED_IPS) {
+        const cutoff = now - RATE_WINDOW;
+        for (const [ip, data] of rateLimitStore.entries()) {
+            if (data.resetTime < cutoff) {
+                rateLimitStore.delete(ip);
+            }
+        }
+    }
+    
+    const clientData = rateLimitStore.get(clientIP) || { count: 0, resetTime: now + RATE_WINDOW };
+    
+    // Reset if window has passed
+    if (now > clientData.resetTime) {
+        clientData.count = 0;
+        clientData.resetTime = now + RATE_WINDOW;
+    }
+    
+    // Check if rate limit exceeded
+    if (clientData.count >= RATE_LIMIT) {
+        return false;
+    }
+    
+    // Increment counter
+    clientData.count++;
+    rateLimitStore.set(clientIP, clientData);
+    return true;
+}
+
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-exports.handler = async (event) => {
-    // *** THIS IS THE NEW DIAGNOSTIC LINE ***
-    console.log("RECEIVED EVENT:", JSON.stringify(event, null, 2));
+// Streaming response function to handle long detailed responses
+async function streamResponse(model, prompt, clientIP, startTime) {
+    try {
+        console.log(`[${clientIP}] Generating detailed streaming content with Gemini 2.5 Pro (unlimited time)...`);
+        
+        // Generate content with streaming - no artificial timeouts for long detailed responses
+        const result = await model.generateContentStream(prompt);
+        
+        let fullText = '';
+        let chunkCount = 0;
+        let lastUpdate = Date.now();
+        
+        // Process each chunk as it arrives - allow unlimited time for detailed responses
+        for await (const chunk of result.stream) {
+            const chunkText = chunk.text();
+            fullText += chunkText;
+            chunkCount++;
+            
+            const elapsed = Date.now() - startTime;
+            
+            // Log progress frequently to show it's working on long responses
+            if (chunkCount % 2 === 0 || (Date.now() - lastUpdate) > 1500) {
+                console.log(`[${clientIP}] Received chunk ${chunkCount}, total length: ${fullText.length}, elapsed: ${elapsed}ms`);
+                lastUpdate = Date.now();
+            }
+        }
+        
+        const duration = Date.now() - startTime;
+        console.log(`[${clientIP}] Detailed streaming completed in ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars`);
+        
+        return JSON.stringify({ 
+            text: fullText,
+            streaming: true,
+            duration: duration,
+            chunks: chunkCount,
+            model: "gemini-2.5-pro",
+            detailedResponse: true
+        });
+        
+    } catch (error) {
+        console.error(`[${clientIP}] Streaming error:`, error.message);
+        return JSON.stringify({ 
+            error: error.message,
+            text: 'Sorry, there was an error generating the response.',
+            streaming: false
+        });
+    }
+}
 
-    // Log environment variable presence (not values)
-    console.log("GEMINI_API_KEY present:", !!process.env.GEMINI_API_KEY);
+exports.handler = async (event) => {
+    const startTime = Date.now();
+    
+    // Ensure event and headers exist
+    if (!event) {
+        console.error('Event object is undefined');
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Internal server error' }),
+            headers: { 'Content-Type': 'application/json' }
+        };
+    }
+    
+    // Get client IP for rate limiting with proper null checking
+    const headers = event.headers || {};
+    const clientIP = headers['x-forwarded-for'] || headers['client-ip'] || 'unknown';
+    
+    // Log request for debugging
+    console.log(`[${new Date().toISOString()}] Chat request from ${clientIP}`);
 
     // Only allow POST requests
     if (event.httpMethod !== 'POST') {
+        console.warn(`[${clientIP}] Method not allowed: ${event.httpMethod}`);
         return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    // Check rate limit
+    if (!checkRateLimit(clientIP)) {
+        console.warn(`[${clientIP}] Rate limit exceeded`);
+        return {
+            statusCode: 429,
+            body: JSON.stringify({ error: 'Rate limit exceeded. Maximum 4 requests per minute.' }),
+            headers: { 'Content-Type': 'application/json' }
+        };
     }
 
     // Return error if env vars are missing
     if (!API_KEY) {
+        console.error('GEMINI_API_KEY environment variable missing');
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: "Missing GEMINI_API_KEY environment variable." }),
+            body: JSON.stringify({ error: "Server configuration error." }),
+            headers: { 'Content-Type': 'application/json' }
         };
     }
 
     try {
-        const { prompt: userPrompt } = JSON.parse(event.body);
+        const body = JSON.parse(event.body || '{}');
+        const { prompt: userPrompt } = body;
 
-        if (!userPrompt) {
-            return { statusCode: 400, body: 'Bad Request: No prompt provided.' };
+        if (!userPrompt || typeof userPrompt !== 'string') {
+            console.warn(`[${clientIP}] Invalid prompt provided`);
+            return { 
+                statusCode: 400, 
+                body: JSON.stringify({ error: 'Bad Request: Valid prompt required.' }),
+                headers: { 'Content-Type': 'application/json' }
+            };
+        }
+
+        // Limit prompt length - increased for detailed conversations
+        const MAX_PROMPT_LENGTH = 75000; // 75k characters for comprehensive prompts
+        if (userPrompt.length > MAX_PROMPT_LENGTH) {
+            console.warn(`[${clientIP}] Prompt too long: ${userPrompt.length} characters`);
+            return { 
+                statusCode: 400, 
+                body: JSON.stringify({ error: `Prompt too long. Maximum ${MAX_PROMPT_LENGTH} characters allowed.` }),
+                headers: { 'Content-Type': 'application/json' }
+            };
         }
 
         // Get system prompt by decrypting the stored file
-        let SECRET_SYSTEM_PROMPT = "You are a helpful AI assistant."; // fallback
+        let SECRET_SYSTEM_PROMPT = "You are a helpful AI assistant. Provide detailed, comprehensive, and thorough responses."; // fallback
         
         try {
             // Try to load and decrypt the system prompt
             const encryptedFilePath = path.join(__dirname, '../../system-prompt-encrypted.json');
-            const encryptedFile = fs.readFileSync(encryptedFilePath, 'utf8');
-            const encryptedData = JSON.parse(encryptedFile);
             
-            const encryptionKey = process.env.SYSTEM_PROMPT_KEY;
-            if (encryptionKey) {
-                const decrypted = decryptSystemPrompt(encryptedData.data, encryptionKey);
-                if (decrypted) {
-                    SECRET_SYSTEM_PROMPT = decrypted;
-                    console.log('✅ System prompt decrypted successfully');
-                } else {
-                    console.warn('⚠️ Failed to decrypt system prompt, using fallback');
-                }
+            if (!fs.existsSync(encryptedFilePath)) {
+                console.warn('⚠️ Encrypted system prompt file not found, using fallback');
             } else {
-                console.warn('⚠️ SYSTEM_PROMPT_KEY not found, using fallback');
+                const encryptedFile = fs.readFileSync(encryptedFilePath, 'utf8');
+                const encryptedData = JSON.parse(encryptedFile);
+                
+                if (!encryptedData || !encryptedData.data) {
+                    console.warn('⚠️ Invalid encrypted data structure, using fallback');
+                } else {
+                    const encryptionKey = process.env.SYSTEM_PROMPT_KEY;
+                    if (encryptionKey) {
+                        const decrypted = decryptSystemPrompt(encryptedData.data, encryptionKey);
+                        if (decrypted) {
+                            SECRET_SYSTEM_PROMPT = decrypted;
+                            console.log('✅ System prompt decrypted successfully');
+                        } else {
+                            console.warn('⚠️ Failed to decrypt system prompt, using fallback');
+                        }
+                    } else {
+                        console.warn('⚠️ SYSTEM_PROMPT_KEY not found, using fallback');
+                    }
+                }
             }
         } catch (error) {
             console.warn('⚠️ Could not load encrypted system prompt:', error.message);
@@ -96,21 +235,31 @@ exports.handler = async (event) => {
 
         const fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${userPrompt}\nAI:`;
 
-        const result = await model.generateContent(fullPrompt);
-        const response = await result.response;
-        const text = response.text();
+        console.log(`[${clientIP}] Starting streaming response`);
 
+        // Use streaming to avoid lambda-local timeout
         return {
             statusCode: 200,
-            body: JSON.stringify({ text: text }),
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type'
+            },
+            body: await streamResponse(model, fullPrompt, clientIP, startTime)
         };
 
     } catch (error) {
-        console.error("Error in Gemini function:", error);
-        // Return error details in development only
+        const duration = Date.now() - startTime;
+        console.error(`[${clientIP}] Error after ${duration}ms:`, error.message);
+        console.error('Stack trace:', error.stack);
+        
         return {
             statusCode: 500,
-            body: JSON.stringify({ error: error.message, stack: error.stack }),
+            body: JSON.stringify({ 
+                error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+            }),
+            headers: { 'Content-Type': 'application/json' }
         };
     }
 };

@@ -25,13 +25,10 @@ function getKey(keyHex) {
 function encrypt(text, password) {
     const key = getKey(password);
     const iv = crypto.randomBytes(12);
-    console.log('Debug (encrypt): key Buffer:', key.toString('hex'));
-    console.log('Debug (encrypt): iv Buffer:', iv.toString('hex'));
     const cipher = crypto.createCipheriv(algorithm, key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
     const authTag = cipher.getAuthTag();
-    console.log('Debug (encrypt): authTag Buffer:', authTag.toString('hex'));
     return {
         encrypted,
         iv: iv.toString('hex'),
@@ -44,9 +41,6 @@ function decrypt(encryptedData, password) {
     const key = getKey(password);
     const iv = Buffer.from(encryptedData.iv, 'hex');
     const authTag = Buffer.from(encryptedData.authTag, 'hex');
-    console.log('Debug (decrypt): key Buffer:', key.toString('hex'));
-    console.log('Debug (decrypt): iv Buffer:', iv.toString('hex'));
-    console.log('Debug (decrypt): authTag Buffer:', authTag.toString('hex'));
     const decipher = crypto.createDecipheriv(algorithm, key, iv);
     decipher.setAuthTag(authTag);
     let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
@@ -71,9 +65,7 @@ const userKeyArg = process.argv[3];
 
 if (command === 'encrypt') {
     try {
-        // Print absolute path for debugging
         const promptPath = require('path').resolve('system-prompt.txt');
-        console.log('Debug: Reading system prompt from:', promptPath);
         let systemPrompt = fs.readFileSync(promptPath, 'utf8');
         // Remove BOM if present
         if (systemPrompt.charCodeAt(0) === 0xFEFF) {
@@ -81,8 +73,6 @@ if (command === 'encrypt') {
         }
         // Normalize line endings
         systemPrompt = systemPrompt.replace(/\r\n/g, '\n');
-        console.log('Debug: systemPrompt length =', systemPrompt.length);
-        console.log('Debug: systemPrompt preview =', systemPrompt.substring(0, 100));
         if (!systemPrompt || systemPrompt.length < 10) {
             throw new Error('system-prompt.txt is empty or too short');
         }
@@ -160,19 +150,6 @@ if (command === 'encrypt') {
         if (!encryptionKey) {
             console.log('❌ SYSTEM_PROMPT_KEY environment variable not found');
             process.exit(1);
-        }
-        // Debug output for key and encrypted data
-        console.log('Debug: Using SYSTEM_PROMPT_KEY:', encryptionKey);
-        if (encryptedData && encryptedData.data) {
-            console.log('Debug: Encrypted data structure:', Object.keys(encryptedData.data));
-            if (encryptedData.data.encrypted) {
-                console.log('Debug: Encrypted preview:', encryptedData.data.encrypted.substring(0, 100));
-                console.log('Debug: Encrypted length:', encryptedData.data.encrypted.length);
-            } else {
-                console.log('Debug: No encrypted field found in data');
-            }
-        } else {
-            console.log('Debug: No data field found in encryptedData');
         }
 
         // Decrypt the prompt

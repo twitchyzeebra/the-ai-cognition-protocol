@@ -151,11 +151,11 @@ exports.handler = stream(async (event, response) => {
 
     } catch (error) {
         console.error("Handler error:", error);
-        // If the main try block fails, we might not have a stream to write to,
-        // so we set a status code and end the response.
+        // If the main try block fails, we need to send an error in the SSE format
+        // before ending the stream.
         if (!response.writableEnded) {
-            response.statusCode = 500;
-            response.end(JSON.stringify({ error: 'Internal Server Error: ' + error.message }));
+            response.write(`data: ${JSON.stringify({type:"error",message:error.message})}\n\n`);
+            response.end();
         }
     }
 });

@@ -1,5 +1,15 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
+// Import Netlify streaming functions
+let stream;
+try {
+  const netlifyFunctions = require("@netlify/functions");
+  stream = netlifyFunctions.stream;
+} catch (e) {
+  // Fallback for local development
+  stream = (handler) => handler;
+}
+
 const API_KEY = process.env.GEMINI_API_KEY;
 if (!API_KEY) {
     console.error("GEMINI_API_KEY environment variable not set.");
@@ -21,29 +31,46 @@ function loadSystemPrompt() {
             
             // Get decryption key from environment
             const encryptionKey = process.env.SYSTEM_PROMPT_KEY;
-            if (!encryptionKey) {
-                console.log("SYSTEM_PROMPT_KEY environment variable not found, using fallback");
+            console.log("Raw SYSTEM_PROMPT_KEY value:", typeof encryptionKey, encryptionKey ? `Length: ${encryptionKey.length}` : "undefined/null");
+            
+            if (!encryptionKey || encryptionKey.trim() === '') {
+                console.log("SYSTEM_PROMPT_KEY environment variable not found or empty, using fallback");
                 return "You are a helpful AI assistant.";
             }
             
             // Validate key format (should be 64-character hex string)
-            if (!/^[a-fA-F0-9]{64}$/.test(encryptionKey)) {
-                console.log("Invalid SYSTEM_PROMPT_KEY format, using fallback");
+            const trimmedKey = encryptionKey.trim();
+            console.log("Trimmed key length:", trimmedKey.length, "First 8 chars:", trimmedKey.substring(0, 8));
+            
+            if (!/^[a-fA-F0-9]{64}$/.test(trimmedKey)) {
+                console.log("Invalid SYSTEM_PROMPT_KEY format (expected 64-char hex), using fallback");
+                console.log("Key validation failed. Key:", trimmedKey);
                 return "You are a helpful AI assistant.";
             }
             
             // Decrypt the system prompt using the same method as encrypt-prompt.js
-            const key = Buffer.from(encryptionKey, 'hex');
-            const iv = Buffer.from(encryptedData.iv, 'hex');
-            const authTag = Buffer.from(encryptedData.authTag, 'hex');
-            const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-            decipher.setAuthTag(authTag);
-            
-            let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
-            decrypted += decipher.final('utf8');
-            
-            console.log("System prompt successfully loaded and decrypted");
-            return decrypted;
+            try {
+                // Validate encrypted data structure
+                if (!encryptedData.iv || !encryptedData.authTag || !encryptedData.encrypted) {
+                    console.log("Invalid encrypted data structure, using fallback");
+                    return "You are a helpful AI assistant.";
+                }
+                
+                const key = Buffer.from(trimmedKey, 'hex');
+                const iv = Buffer.from(encryptedData.iv, 'hex');
+                const authTag = Buffer.from(encryptedData.authTag, 'hex');
+                const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+                decipher.setAuthTag(authTag);
+                
+                let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+                decrypted += decipher.final('utf8');
+                
+                console.log("System prompt successfully loaded and decrypted");
+                return decrypted;
+            } catch (decryptError) {
+                console.error("Decryption failed:", decryptError);
+                return "You are a helpful AI assistant.";
+            }
         }
         console.log("Encrypted system prompt file not found, using fallback");
         return "You are a helpful AI assistant.";
@@ -53,8 +80,8 @@ function loadSystemPrompt() {
     }
 }
 
-// Simple handler without complex streaming
-exports.handler = async (event, context) => {
+// Streaming handler that sends chunks in real-time
+exports.handler = stream(async (event, context) => {
     // Add debugging logs to track execution
     console.log("Function started");
     console.log("Environment Variables:", {
@@ -62,18 +89,15 @@ exports.handler = async (event, context) => {
         NETLIFY: process.env.NETLIFY ? "[SET]" : "[NOT SET]",
     });
 
-    // CORS headers
-    const headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    };
-
     // Handle preflight requests
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
-            headers,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            },
             body: '',
         };
     }
@@ -82,7 +106,9 @@ exports.handler = async (event, context) => {
     if (event.httpMethod !== 'POST') {
         return { 
             statusCode: 405, 
-            headers,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+            },
             body: JSON.stringify({ error: 'Method Not Allowed' })
         };
     }
@@ -95,7 +121,9 @@ exports.handler = async (event, context) => {
         if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
             return { 
                 statusCode: 400, 
-                headers,
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                },
                 body: JSON.stringify({ error: 'Invalid prompt: Prompt must be a non-empty string.' })
             };
         }
@@ -120,46 +148,61 @@ exports.handler = async (event, context) => {
         console.log("Sending message stream");
         const result = await chat.sendMessageStream(prompt);
 
-        // Stream response chunks immediately to prevent gateway timeout
-        let responseText = '';
-        const chunks = [];
-        
-        // Send initial SSE headers
-        chunks.push('data: {"type":"start"}\n\n');
-        
-        for await (const chunk of result.stream) {
-            const chunkText = chunk.text();
-            if (chunkText) {
-                responseText += chunkText;
-                // Send each chunk as SSE data
-                chunks.push(`data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`);
+        // Create a readable stream for real-time streaming
+        const { Readable } = require('stream');
+        const readableStream = new Readable({
+            read() {}
+        });
+
+        // Start streaming chunks immediately
+        (async () => {
+            try {
+                // Send start signal
+                readableStream.push('data: {"type":"start"}\n\n');
+                
+                for await (const chunk of result.stream) {
+                    const chunkText = chunk.text();
+                    if (chunkText) {
+                        // Send each chunk immediately
+                        const sseData = `data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`;
+                        readableStream.push(sseData);
+                    }
+                }
+                
+                // Send completion signal
+                readableStream.push('data: {"type":"done"}\n\n');
+                readableStream.push(null); // End stream
+                console.log("Response complete");
+                
+            } catch (streamError) {
+                console.error("Stream error:", streamError);
+                readableStream.push(`data: ${JSON.stringify({type:"error",message:streamError.message})}\n\n`);
+                readableStream.push(null);
             }
-        }
-        
-        // Send completion signal
-        chunks.push('data: {"type":"done"}\n\n');
-        
-        console.log("Response complete");
+        })();
+
         return {
             statusCode: 200,
             headers: {
-                ...headers,
+                'Access-Control-Allow-Origin': '*',
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
             },
-            body: chunks.join(''),
+            body: readableStream,
         };
 
     } catch (error) {
         console.error("Handler error:", error);
         return {
             statusCode: 500,
-            headers,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+            },
             body: JSON.stringify({ 
                 error: 'Internal Server Error: ' + error.message,
                 success: false
             }),
         };
     }
-};
+});

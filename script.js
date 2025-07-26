@@ -195,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`(.+?)`/g, '<code>$1</code>');
     }
 
-    // SSE-based sendMessage function to prevent gateway timeouts
+    // True streaming sendMessage function using ReadableStream
     async function sendMessage(e) {
         if (e) e.preventDefault();
         const prompt = chatInput.value.trim();
@@ -222,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let firstChunk = true;
         
         try {
-            console.log('🚀 Sending message to chat function (SSE)...');
+            console.log('🚀 Sending message to chat function (real-time streaming)...');
             const response = await fetch('/.netlify/functions/chat', {
                 method: 'POST',
                 headers: {
@@ -234,61 +234,73 @@ document.addEventListener('DOMContentLoaded', () => {
                 }),
             });
 
-            if (!response.ok) {
+            if (!response.ok || !response.body) {
                 throw new Error(`Network error: ${response.status} ${response.statusText}`);
             }
 
-            // Parse SSE response
-            const text = await response.text();
-            const lines = text.split('\n');
-            
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const dataStr = line.substring(6);
-                    if (dataStr.trim()) {
-                        try {
-                            const data = JSON.parse(dataStr);
-                            
-                            if (data.type === 'start') {
-                                // Remove thinking indicator on first chunk
-                                if (firstChunk) {
-                                    aiMessageDiv.innerHTML = '';
-                                    aiMessageDiv.classList.remove('streaming');
-                                    firstChunk = false;
-                                }
-                            } else if (data.type === 'chunk' && data.text) {
-                                fullResponse += data.text;
-                                aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-                                chatLog.scrollTop = chatLog.scrollHeight;
-                            } else if (data.type === 'done') {
-                                stopThinkingTimer();
-                                loadingIndicator.classList.add('hidden');
+            // Process the streaming response
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                let lines = buffer.split('\n\n');
+                buffer = lines.pop(); // Keep incomplete line in buffer
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.substring(6);
+                        if (dataStr.trim()) {
+                            try {
+                                const data = JSON.parse(dataStr);
                                 
-                                // Add metadata
-                                const metaDiv = document.createElement('div');
-                                metaDiv.className = 'response-meta';
-                                const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
-                                const metaText = `Generated in ${elapsed}s • 🌊 Streamed response`;
-                                metaDiv.style.color = '#2196f3';
-                                metaDiv.innerHTML = `<small>${metaText}</small>`;
-                                aiMessageDiv.appendChild(metaDiv);
-                                
-                                // Add response to history
-                                if (fullResponse) {
-                                    conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
+                                if (data.type === 'start') {
+                                    // Remove thinking indicator on start
+                                    if (firstChunk) {
+                                        aiMessageDiv.innerHTML = '';
+                                        aiMessageDiv.classList.remove('streaming');
+                                        firstChunk = false;
+                                    }
+                                } else if (data.type === 'chunk' && data.text) {
+                                    fullResponse += data.text;
+                                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                                    chatLog.scrollTop = chatLog.scrollHeight;
+                                } else if (data.type === 'done') {
+                                    stopThinkingTimer();
+                                    loadingIndicator.classList.add('hidden');
+                                    
+                                    // Add metadata
+                                    const metaDiv = document.createElement('div');
+                                    metaDiv.className = 'response-meta';
+                                    const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
+                                    const metaText = `Generated in ${elapsed}s • 🌊 Real-time stream`;
+                                    metaDiv.style.color = '#2196f3';
+                                    metaDiv.innerHTML = `<small>${metaText}</small>`;
+                                    aiMessageDiv.appendChild(metaDiv);
+                                    
+                                    // Add response to history
+                                    if (fullResponse) {
+                                        conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
+                                    }
+                                    return;
+                                } else if (data.type === 'error') {
+                                    throw new Error(data.message);
                                 }
-                                return;
+                            } catch (parseError) {
+                                console.error('Error parsing SSE data:', parseError, 'Raw data:', dataStr);
                             }
-                        } catch (parseError) {
-                            console.error('Error parsing SSE data:', parseError);
                         }
                     }
                 }
             }
             
         } catch (error) {
-            console.error('❌ Error:', error);
-            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong. Please try again.');
+            console.error('❌ Streaming error:', error);
+            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
             stopThinkingTimer();
             loadingIndicator.classList.add('hidden');
             aiMessageDiv.classList.remove('streaming');

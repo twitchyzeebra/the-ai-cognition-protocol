@@ -6,129 +6,26 @@
     <title>Gemini AI Chat</title>
     <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-    <div id="container">
-        <!-- Collapsible All-Purpose Sidebar -->
-        <aside id="sidebar" class="sidebar-expanded">
-            <div class="sidebar-toggle">
-                <button id="sidebar-toggle-btn" title="Toggle Sidebar">
-                    <span class="toggle-icon">‹</span>
-                </button>
-            </div>
-            
-            <div class="sidebar-content">
-                <!-- Navigation Tabs -->
-                <div class="sidebar-tabs">
-                    <button class="tab-button active" data-tab="documents">
-                        <span class="tab-icon">📁</span>
-                        <span class="tab-label">Documents</span>
-                    </button>
-                    <button class="tab-button" data-tab="settings">
-                        <span class="tab-icon">⚙️</span>
-                        <span class="tab-label">Settings</span>
-                    </button>
-                    <button class="tab-button" data-tab="history">
-                        <span class="tab-icon">🕒</span>
-                        <span class="tab-label">History</span>
-                    </button>
-                </div>
+    <div id="chat-container">
+        <h1>My Custom AI</h1>
+        <div id="chat-log"></div>
+        <div id="input-container">
+            <input type="text" id="user-input" placeholder="Ask a question...">
+            <button id="send-button">Send</button>
+        </div>
+        <div id="loading-indicator" class="hidden">Thinking...</div>
+    </div>
 
-                <!-- Documents Tab Content -->
-                <div class="tab-content active" id="documents-tab">
-                    <div class="tab-header">
-                        <h2>Documents</h2>
-                        <input type="text" id="search-docs" placeholder="Search chapters...">
-                    </div>
-                    <nav id="chapters-list">
-                        <!-- Chapters will be dynamically loaded here -->
-                    </nav>
-                </div>
-
-                <!-- Settings Tab Content -->
-                <div class="tab-content" id="settings-tab">
-                    <div class="tab-header">
-                        <h2>Settings</h2>
-                    </div>
-                    <div class="settings-content">
-                        <div class="setting-item">
-                            <label for="theme-select">Theme:</label>
-                            <select id="theme-select">
-                                <option value="dark">Dark</option>
-                                <option value="light">Light</option>
-                                <option value="auto">Auto</option>
-                            </select>
-                        </div>
-                        <div class="setting-item">
-                            <label for="model-select">AI Model:</label>
-                            <select id="model-select">
-                                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                            </select>
-                        </div>
-                        <div class="setting-item">
-                            <label for="response-length">Response Style:</label>
-                            <select id="response-length">
-                                <option value="detailed">Detailed</option>
-                                <option value="balanced">Balanced</option>
-                                <option value="concise">Concise</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- History Tab Content -->
-                <div class="tab-content" id="history-tab">
-                    <div class="tab-header">
-                        <h2>Chat History</h2>
-                        <button id="clear-history" class="clear-btn">Clear All</button>
-                    </div>
-                    <div class="history-content">
-                        <div class="history-placeholder">
-                            <p>No chat history yet</p>
-                            <small>Your conversations will appear here</small>
-                        </div>
-                    </div>
-                </div>
+    <!-- Document Repository Section -->
+    <div id="doc-repo-container">
+        <h2>Document Repository</h2>
+        <div id="selected-doc-name"></div>
+        <div id="doc-nav">
+            <div id="doc-list">
+                <!-- Documents will be listed here -->
             </div>
-            
-            <!-- Chat Toggle Section - Always visible -->
-            <div class="sidebar-footer">
-                <div class="chat-toggle-section">
-                    <div class="toggle-row">
-                        <span class="toggle-label">💬 Chat Window</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="chat-toggle" checked>
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </aside>
-        <main id="main-content">
-            <section id="chat-section">
-                <h1>Gemini AI Chat</h1>
-                <div id="chat-window">
-                    <div id="chat-log"></div>
-                </div>
-                <form id="chat-form">
-                    <textarea id="chat-input" placeholder="Type your message... (Shift+Enter for new line)" autocomplete="off" rows="1"></textarea>
-                    <button type="submit">Send</button>
-                </form>
-                <div id="loading-indicator" class="hidden">
-                    <span id="thinking-text">Thinking</span>
-                    <span id="thinking-timer">0s</span>
-                </div>
-            </section>
-            <section id="doc-preview" class="hidden">
-                <div id="doc-preview-header">
-                    <h2 id="doc-title">Document Preview</h2>
-                    <button type="button" id="close-preview" title="Close document preview" onclick="window.closeDocumentPreview && window.closeDocumentPreview()">×</button>
-                </div>
-                <div id="doc-content"></div>
-            </section>
-        </main>
+        </div>
     </div>
     <script src="script.js"></script>
 </body>

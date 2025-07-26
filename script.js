@@ -195,83 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`(.+?)`/g, '<code>$1</code>');
     }
 
-    // Handle real-time streaming with Server-Sent Events (SSE)
-    async function sendStreamingMessage(prompt, aiMessageDiv) {
-        let fullResponse = ''; // Declaration moved here for correct scope
-        try {
-            console.log('🚀 Starting real-time SSE chat request...');
-            
-            const response = await fetch('/.netlify/functions/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, history: conversationHistory }) // Send history with the prompt
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Server Error Response:', errorText);
-                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
-            }
-
-            if (!response.body) {
-                throw new Error('Response body is missing');
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    console.log('✅ SSE stream finished.');
-                    break;
-                }
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n\n');
-                buffer = lines.pop(); // Keep the last, possibly incomplete line
-
-                for (const line of lines) {
-                    if (line.startsWith('data:')) {
-                        const jsonString = line.substring(5).trim();
-                        if (jsonString) {
-                            try {
-                                const data = JSON.parse(jsonString);
-
-                                if (data.done) {
-                                    const metaDiv = document.createElement('div');
-                                    metaDiv.className = 'response-meta';
-                                    const metaText = `Generated in ${(data.duration / 1000).toFixed(1)}s • 🌊 Real-time stream`;
-                                    metaDiv.style.color = '#2196f3';
-                                    metaDiv.innerHTML = `<small>${metaText}</small>`;
-                                    aiMessageDiv.appendChild(metaDiv);
-                                    return;
-                                }
-
-                                if (data.text) {
-                                    fullResponse += data.text;
-                                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-                                    chatLog.scrollTop = chatLog.scrollHeight;
-                                }
-                            } catch (e) {
-                                console.error('Error parsing SSE data:', e, 'Raw data:', jsonString);
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('❌ Real-time streaming error:', error);
-            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
-        } finally {
-            // Add the AI's complete response to the history
-            if (fullResponse) {
-                conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
-            }
-        }
-    }
-
+    // Updated sendMessage function for non-streaming mode
     async function sendMessage(e) {
         if (e) e.preventDefault();
         const prompt = chatInput.value.trim();
@@ -295,16 +219,67 @@ document.addEventListener('DOMContentLoaded', () => {
         chatLog.scrollTop = chatLog.scrollHeight;
         
         try {
-            // Use the new real-time streaming function
-            await sendStreamingMessage(prompt, aiMessageDiv);
+            console.log('🚀 Starting chat request...');
+            
+            const response = await fetch('/.netlify/functions/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    prompt, 
+                    history: conversationHistory.slice(0, -1) // Send history without the current message
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Server Error Response:', errorText);
+                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            // Update the message with the response
+            const fullResponse = data.text || '';
+            aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+            
+            // Add response metadata
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'response-meta';
+            const metaText = `Generated in ${(data.duration / 1000).toFixed(1)}s • ${data.model || 'Gemini'} • ${fullResponse.length} chars`;
+            metaDiv.style.color = '#2196f3';
+            metaDiv.innerHTML = `<small>${metaText}</small>`;
+            aiMessageDiv.appendChild(metaDiv);
+            
+            // Add AI response to conversation history
+            if (fullResponse) {
+                conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
+            }
+            
+            console.log('✅ Chat request completed successfully');
+            
         } catch (error) {
-            console.error('❌ Top-level sendMessage error:', error);
-            aiMessageDiv.innerHTML = formatAIResponse('An unexpected error occurred. Please check the console and try again.');
+            console.error('❌ Chat request error:', error);
+            
+            // Show error message to user
+            aiMessageDiv.innerHTML = formatAIResponse(
+                `Sorry, there was an error processing your request: ${error.message}\n\n` +
+                `This might be due to:\n` +
+                `• Network connectivity issues\n` +
+                `• Server configuration problems\n` +
+                `• API rate limiting\n\n` +
+                `Please try again in a moment.`
+            );
+            
         } finally {
-            // Clean up after streaming is complete or has failed
+            // Clean up after request is complete or has failed
             aiMessageDiv.classList.remove('streaming');
             stopThinkingTimer();
             loadingIndicator.classList.add('hidden');
+            chatLog.scrollTop = chatLog.scrollHeight;
         }
     }
 

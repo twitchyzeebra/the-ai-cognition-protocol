@@ -152,9 +152,13 @@ exports.handler = stream(async (event, response) => {
     } catch (error) {
         console.error("Handler error:", error);
         // If the main try block fails, we need to send an error in the SSE format
-        // before ending the stream.
+        // before ending the stream. This block handles errors that occur before streaming begins.
         if (!response.writableEnded) {
-            response.write(`data: ${JSON.stringify({type:"error",message:error.message})}\n\n`);
+            // Ensure headers are set for the error response
+            response.setHeader('Content-Type', 'text/event-stream');
+            response.setHeader('Cache-Control', 'no-cache');
+            response.setHeader('Connection', 'keep-alive');
+            response.write(`data: ${JSON.stringify({type:"error",message: 'Internal Server Error: ' + error.message})}\n\n`);
             response.end();
         }
     }

@@ -1,13 +1,10 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { stream } = require("@netlify/functions");
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
 
 const API_KEY = process.env.GEMINI_API_KEY;
-
-// ... (rest of the helper functions like getKey, decryptSystemPrompt remain the same) ...
 
 // Decryption function
 function getKey(keyHex) {
@@ -39,62 +36,51 @@ function decryptSystemPrompt(encryptedData, password) {
 
 // True streaming function using Node.js Readable stream
 async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream) {
-    return new Promise(async (resolve, reject) => {
+    try {
         const startTime = Date.now();
-        let keepAliveInterval;
-        try {
-            // Start keep-alive pings immediately
-            keepAliveInterval = setInterval(() => {
-                readableStream.push(':keep-alive\n\n');
-                console.log(`[${clientIP}] Sent keep-alive ping.`);
-            }, 15000);
+        console.log(`[${clientIP}] Starting REAL-TIME streaming response...`);
+        
+        const result = await model.generateContentStream(prompt);
 
-            console.log(`[${clientIP}] Starting REAL-TIME streaming response...`);
-            const result = await model.generateContentStream(prompt);
+        let fullText = '';
+        let chunkCount = 0;
 
-            let fullText = '';
-            let chunkCount = 0;
+        for await (const chunk of result.stream) {
+            const chunkText = chunk.text();
+            if (chunkText) {
+                fullText += chunkText;
+                chunkCount++;
 
-            for await (const chunk of result.stream) {
-                const chunkText = chunk.text();
-                if (chunkText) {
-                    fullText += chunkText;
-                    chunkCount++;
-
-                    const eventData = {
-                        text: chunkText,
-                        chunk: chunkCount,
-                        totalLength: fullText.length,
-                        elapsed: Date.now() - startTime
-                    };
-                    readableStream.push(`data: ${JSON.stringify(eventData)}\n\n`);
-                }
+                const eventData = {
+                    text: chunkText,
+                    chunk: chunkCount,
+                    totalLength: fullText.length,
+                    elapsed: Date.now() - startTime
+                };
+                readableStream.push(`data: ${JSON.stringify(eventData)}\n\n`);
             }
-
-            const finalEvent = {
-                done: true,
-                duration: Date.now() - startTime,
-                totalLength: fullText.length,
-                totalChunks: chunkCount
-            };
-            readableStream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
-
-            console.log(`[${clientIP}] Real-time streaming completed: ${Date.now() - startTime}ms`);
-            resolve(); // Resolve the promise when streaming is done
-
-        } catch (error) {
-            console.error(`[${clientIP}] Real-time streaming error:`, error.message);
-            const errorEvent = {
-                error: 'Error during streaming.',
-                message: error.message
-            };
-            readableStream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
-            reject(error); // Reject the promise on error
-        } finally {
-            if (keepAliveInterval) clearInterval(keepAliveInterval);
-            readableStream.push(null); // End the stream
         }
-    });
+
+        const finalEvent = {
+            done: true,
+            duration: Date.now() - startTime,
+            totalLength: fullText.length,
+            totalChunks: chunkCount
+        };
+        readableStream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
+
+        console.log(`[${clientIP}] Real-time streaming completed: ${Date.now() - startTime}ms`);
+
+    } catch (error) {
+        console.error(`[${clientIP}] Real-time streaming error:`, error.message);
+        const errorEvent = {
+            error: 'Error during streaming.',
+            message: error.message
+        };
+        readableStream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
+    } finally {
+        readableStream.push(null); // End the stream
+    }
 }
 
 // Rate limiting
@@ -121,8 +107,11 @@ function checkRateLimit(clientIP) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-// Wrap the handler with the official `stream` utility
-exports.handler = stream(async (event) => {
+exports.handler = async (event, context) => {
+    // This is crucial for streaming in local development
+    if (context) {
+        context.callbackWaitsForEmptyEventLoop = false;
+    }
     const clientIP = event.headers['x-forwarded-for'] || 'unknown';
 
     if (event.httpMethod !== 'POST') {
@@ -180,9 +169,9 @@ exports.handler = stream(async (event) => {
         // Immediately send a connection confirmation event
         readableStream.push(`data: ${JSON.stringify({ event: 'connection-established' })}\n\n`);
         console.log(`[${clientIP}] Pushed connection-established event.`);
-
-        // Await the streaming function to keep the handler alive
-        await getRealtimeStreamResponse(model, fullPrompt, clientIP, readableStream);
+        
+        // Call the streaming function without awaiting it, allowing the handler to return immediately
+        getRealtimeStreamResponse(model, fullPrompt, clientIP, readableStream);
 
         return {
             statusCode: 200,
@@ -203,4 +192,4 @@ exports.handler = stream(async (event) => {
             headers: { 'Content-Type': 'application/json' }
         };
     }
-});
+};

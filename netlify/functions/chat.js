@@ -120,26 +120,35 @@ exports.handler = async (event, context) => {
         console.log("Sending message stream");
         const result = await chat.sendMessageStream(prompt);
 
-        // Collect all chunks
-        let fullResponse = '';
+        // Stream response chunks immediately to prevent gateway timeout
+        let responseText = '';
+        const chunks = [];
+        
+        // Send initial SSE headers
+        chunks.push('data: {"type":"start"}\n\n');
+        
         for await (const chunk of result.stream) {
             const chunkText = chunk.text();
             if (chunkText) {
-                fullResponse += chunkText;
+                responseText += chunkText;
+                // Send each chunk as SSE data
+                chunks.push(`data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`);
             }
         }
-
+        
+        // Send completion signal
+        chunks.push('data: {"type":"done"}\n\n');
+        
         console.log("Response complete");
         return {
             statusCode: 200,
             headers: {
                 ...headers,
-                'Content-Type': 'application/json',
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
             },
-            body: JSON.stringify({ 
-                text: fullResponse,
-                success: true
-            }),
+            body: chunks.join(''),
         };
 
     } catch (error) {

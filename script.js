@@ -195,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`(.+?)`/g, '<code>$1</code>');
     }
 
-    // Simple sendMessage function using JSON response
+    // SSE-based sendMessage function to prevent gateway timeouts
     async function sendMessage(e) {
         if (e) e.preventDefault();
         const prompt = chatInput.value.trim();
@@ -211,15 +211,18 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingIndicator.classList.remove('hidden');
         startThinkingTimer();
 
-        // Add placeholder message that will be updated when response arrives
+        // Add placeholder message that will be updated as chunks arrive
         const aiMessageDiv = document.createElement('div');
-        aiMessageDiv.className = 'message ai-message thinking';
-        aiMessageDiv.innerHTML = '<span class="thinking-indicator">🤔</span> AI is thinking...';
+        aiMessageDiv.className = 'message ai-message streaming';
+        aiMessageDiv.innerHTML = '<span class="streaming-indicator">🌊</span> AI is thinking...';
         chatLog.appendChild(aiMessageDiv);
         chatLog.scrollTop = chatLog.scrollHeight;
 
+        let fullResponse = '';
+        let firstChunk = true;
+        
         try {
-            console.log('🚀 Sending message to chat function...');
+            console.log('🚀 Sending message to chat function (SSE)...');
             const response = await fetch('/.netlify/functions/chat', {
                 method: 'POST',
                 headers: {
@@ -235,40 +238,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`Network error: ${response.status} ${response.statusText}`);
             }
 
-            const data = await response.json();
+            // Parse SSE response
+            const text = await response.text();
+            const lines = text.split('\n');
             
-            if (data.error) {
-                throw new Error(data.error);
-            }
-
-            if (data.text) {
-                // Remove thinking indicator and show response
-                aiMessageDiv.classList.remove('thinking');
-                aiMessageDiv.innerHTML = '';
-                
-                // Add the complete response
-                const responseSpan = document.createElement('span');
-                responseSpan.textContent = data.text;
-                aiMessageDiv.appendChild(responseSpan);
-                
-                stopThinkingTimer();
-                loadingIndicator.classList.add('hidden');
-                
-                // Add metadata
-                const metaDiv = document.createElement('div');
-                metaDiv.className = 'response-meta';
-                const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
-                const metaText = `Generated in ${elapsed}s • ✨ Complete response`;
-                metaDiv.style.color = '#4caf50';
-                metaDiv.innerHTML = `<small>${metaText}</small>`;
-                aiMessageDiv.appendChild(metaDiv);
-                
-                // Add response to history
-                conversationHistory.push({ role: "model", parts: [{ text: data.text }] });
-                
-                chatLog.scrollTop = chatLog.scrollHeight;
-            } else {
-                throw new Error('No response text received');
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const dataStr = line.substring(6);
+                    if (dataStr.trim()) {
+                        try {
+                            const data = JSON.parse(dataStr);
+                            
+                            if (data.type === 'start') {
+                                // Remove thinking indicator on first chunk
+                                if (firstChunk) {
+                                    aiMessageDiv.innerHTML = '';
+                                    aiMessageDiv.classList.remove('streaming');
+                                    firstChunk = false;
+                                }
+                            } else if (data.type === 'chunk' && data.text) {
+                                fullResponse += data.text;
+                                aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                                chatLog.scrollTop = chatLog.scrollHeight;
+                            } else if (data.type === 'done') {
+                                stopThinkingTimer();
+                                loadingIndicator.classList.add('hidden');
+                                
+                                // Add metadata
+                                const metaDiv = document.createElement('div');
+                                metaDiv.className = 'response-meta';
+                                const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
+                                const metaText = `Generated in ${elapsed}s • 🌊 Streamed response`;
+                                metaDiv.style.color = '#2196f3';
+                                metaDiv.innerHTML = `<small>${metaText}</small>`;
+                                aiMessageDiv.appendChild(metaDiv);
+                                
+                                // Add response to history
+                                if (fullResponse) {
+                                    conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
+                                }
+                                return;
+                            }
+                        } catch (parseError) {
+                            console.error('Error parsing SSE data:', parseError);
+                        }
+                    }
+                }
             }
             
         } catch (error) {
@@ -276,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
             aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong. Please try again.');
             stopThinkingTimer();
             loadingIndicator.classList.add('hidden');
-            aiMessageDiv.classList.remove('thinking');
+            aiMessageDiv.classList.remove('streaming');
         }
     }
 

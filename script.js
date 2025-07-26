@@ -205,6 +205,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ prompt })
             });
 
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Server Error Response:', errorText);
+                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+            }
+
             if (!response.body) {
                 throw new Error('Response body is missing');
             }

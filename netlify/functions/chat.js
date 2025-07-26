@@ -21,6 +21,9 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 // This function handles the core logic of streaming the AI response
 async function streamAIResponse(prompt, history, readableStream) {
     try {
+        // Send an initial SSE comment to keep the connection alive
+        readableStream.push(': ping\n\n');
+
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         const chat = model.startChat({
             history: history || [],

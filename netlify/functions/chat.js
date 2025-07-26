@@ -108,15 +108,21 @@ exports.handler = stream(async (event, context) => {
         // Start the AI stream in the background. The handler returns the stream immediately.
         streamAIResponse(prompt, history || [], readableStream);
 
-        return {
-            statusCode: 200,
-            headers: {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            },
-            body: readableStream,
-        };
+        // Modify the response to buffer the stream's data
+        const chunks = [];
+        readableStream.on('data', (chunk) => chunks.push(chunk));
+        readableStream.on('end', () => {
+            const responseBody = Buffer.concat(chunks).toString('utf-8');
+            return {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                },
+                body: responseBody,
+            };
+        });
 
     } catch (error) {
         console.error("Handler error:", error);

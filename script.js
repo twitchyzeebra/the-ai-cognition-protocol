@@ -197,84 +197,57 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle real-time streaming with Server-Sent Events (SSE)
     async function sendStreamingMessage(prompt, aiMessageDiv) {
         try {
-            console.log('🚀 Starting real-time SSE chat request...');
+            console.log('🚀 Starting chat request...');
             
-            const response = await fetch('/.netlify/functions/chat', {
+            // Step 1: Request to start the AI generation
+            const requestResponse = await fetch('/.netlify/functions/chat-request', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt })
             });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Server Error Response:', errorText);
-                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+            if (!requestResponse.ok) {
+                const errorText = await requestResponse.text();
+                console.error('❌ Initial request failed:', errorText);
+                throw new Error(`Initial request failed: ${requestResponse.status}`);
             }
 
-            if (!response.body) {
-                throw new Error('Response body is missing');
-            }
+            const { requestId } = await requestResponse.json();
+            console.log(`✅ Request accepted with ID: ${requestId}`);
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
+            // Step 2: Poll the streaming endpoint
+            const eventSource = new EventSource(`/.netlify/functions/chat-poll?requestId=${requestId}`);
             let fullResponse = '';
-            let buffer = '';
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    console.log('✅ SSE stream finished.');
-                    break;
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+
+                if (data.done) {
+                    eventSource.close();
+                    console.log('✅ Stream finished.');
+                    const metaDiv = document.createElement('div');
+                    metaDiv.className = 'response-meta';
+                    metaDiv.innerHTML = `<small>Generated via polling • 🌊 Real-time stream</small>`;
+                    aiMessageDiv.appendChild(metaDiv);
+                    return;
                 }
 
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n\n');
-                buffer = lines.pop(); // Keep the last, possibly incomplete line
-
-                for (const line of lines) {
-                    if (line.startsWith(':keep-alive')) {
-                        console.log('❤️ Received keep-alive ping.');
-                        continue;
-                    }
-
-                    if (line.startsWith('data:')) {
-                        const jsonString = line.substring(5).trim();
-                        if (jsonString) {
-                            try {
-                                const data = JSON.parse(jsonString);
-
-                                // Handle connection confirmation
-                                if (data.event === 'connection-established') {
-                                    console.log('🤝 Connection established with server.');
-                                    continue; // Move to the next line
-                                }
-
-                                if (data.done) {
-                                    // Add final metadata
-                                    const metaDiv = document.createElement('div');
-                                    metaDiv.className = 'response-meta';
-                                    const metaText = `Generated in ${(data.duration / 1000).toFixed(1)}s • ${data.totalChunks} chunks • ${data.totalLength} characters • 🌊 Real-time stream`;
-                                    metaDiv.style.color = '#2196f3';
-                                    metaDiv.innerHTML = `<small>${metaText}</small>`;
-                                    aiMessageDiv.appendChild(metaDiv);
-                                    return; // End processing
-                                }
-
-                                if (data.text) {
-                                    fullResponse += data.text;
-                                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-                                    chatLog.scrollTop = chatLog.scrollHeight;
-                                }
-                            } catch (e) {
-                                console.error('Error parsing SSE data:', e, 'Raw data:', jsonString);
-                            }
-                        }
-                    }
+                if (data.text) {
+                    fullResponse += data.text;
+                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                    chatLog.scrollTop = chatLog.scrollHeight;
                 }
-            }
+            };
+
+            eventSource.onerror = (err) => {
+                console.error('❌ EventSource failed:', err);
+                eventSource.close();
+                aiMessageDiv.innerHTML = formatAIResponse('Sorry, the connection was lost. Please try again.');
+            };
+
         } catch (error) {
             console.error('❌ Real-time streaming error:', error);
-            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
+            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong. Please try again.');
         }
     }
 

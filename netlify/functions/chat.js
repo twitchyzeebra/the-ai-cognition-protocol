@@ -6,9 +6,7 @@ let stream;
 try {
   const netlifyFunctions = require("@netlify/functions");
   stream = netlifyFunctions.stream;
-  console.log("Successfully imported Netlify stream handler for production.");
 } catch (e) {
-  console.log("Using fallback stream handler for local development.");
   stream = (handler) => handler;
 }
 
@@ -22,9 +20,7 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 // This function handles the core logic of streaming the AI response
 async function streamAIResponse(prompt, history, readableStream) {
     try {
-        const modelName = "gemini-2.5-pro";
-        console.log(`[DEBUG] Initializing model: ${modelName}`); // Added for debugging
-        const model = genAI.getGenerativeModel({ model: modelName });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         const chat = model.startChat({
             history: history || [],
         });
@@ -37,11 +33,12 @@ async function streamAIResponse(prompt, history, readableStream) {
                 readableStream.push(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
             }
         }
+        // End the stream on success
+        readableStream.push(null);
     } catch (error) {
         console.error("AI streaming error:", error);
         readableStream.push(`data: ${JSON.stringify({ error: "Error during streaming." })}\n\n`);
-    } finally {
-        // Signal the end of the stream
+        // End the stream on error
         readableStream.push(null);
     }
 }

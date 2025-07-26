@@ -13,10 +13,12 @@ try {
 
 const API_KEY = process.env.GEMINI_API_KEY;
 if (!API_KEY) {
-    // This will cause the function to fail gracefully if the key is missing
     throw new Error("GEMINI_API_KEY environment variable not set.");
 }
 const genAI = new GoogleGenerativeAI(API_KEY);
+
+// System prompt loader
+const { loadSystemPrompt } = require('./_systemPrompt');
 
 // This function handles the core logic of streaming the AI response
 async function streamAIResponse(prompt, history, readableStream) {
@@ -25,8 +27,23 @@ async function streamAIResponse(prompt, history, readableStream) {
         readableStream.push(': ping\n\n');
 
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        // Always inject the system prompt as the first message in the history
+        let sysPrompt;
+        try {
+            sysPrompt = loadSystemPrompt();
+        } catch (e) {
+            console.error('System prompt error:', e);
+            sysPrompt = null;
+        }
+        let fullHistory = Array.isArray(history) ? [...history] : [];
+        // Gemini requires the first message to be from 'user'.
+        if (sysPrompt) {
+            if (!fullHistory.length || fullHistory[0].role !== 'user') {
+                fullHistory.unshift({ role: 'user', parts: [{ text: sysPrompt }] });
+            }
+        }
         const chat = model.startChat({
-            history: history || [],
+            history: fullHistory,
         });
         const result = await chat.sendMessageStream(prompt);
 

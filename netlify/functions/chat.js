@@ -65,8 +65,13 @@ exports.handler = stream(async (event, context) => {
 
         const readableStream = new Readable({ read() {} });
         
-        // Start the AI stream in the background. The handler returns the stream immediately.
-        streamAIResponse(prompt, history, readableStream);
+        // Start the AI stream in the background, with an added catch for robustness
+        streamAIResponse(prompt, history, readableStream).catch(err => {
+            console.error("Unhandled streamAIResponse error:", err);
+            if (!readableStream.destroyed) {
+                readableStream.push(null); // Ensure stream is closed on unexpected error
+            }
+        });
 
         return {
             statusCode: 200,

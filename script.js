@@ -85,7 +85,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let thinkingInterval = null;
     let thinkingStartTime = null;
     let selectedChapter = null;
-    let conversationHistory = []; // Add this line to store the history
 
     // Sidebar functionality
     function toggleSidebar() {
@@ -197,90 +196,61 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle real-time streaming with Server-Sent Events (SSE)
     async function sendStreamingMessage(prompt, aiMessageDiv) {
-        let fullResponse = ''; // Declaration moved here for correct scope
-        try {
-            console.log('🚀 Starting real-time SSE chat request...');
-            
-            const response = await fetch('/.netlify/functions/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, history: conversationHistory }) // Send history with the prompt
-            });
+    let fullResponse = '';
+    try {
+        console.log('🚀 Starting chat request...');
+        
+        const response = await fetch('/.netlify/functions/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                prompt, 
+                history: conversationHistory.slice(0, -1) // Send history without the current message
+            })
+        });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('❌ Server Error Response:', errorText);
-                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
-            }
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Server Error Response:', errorText);
+            throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+        }
 
-            if (!response.body) {
-                throw new Error('Response body is missing');
-            }
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    console.log('✅ SSE stream finished.');
-                    break;
-                }
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n\n');
-                buffer = lines.pop(); // Keep the last, possibly incomplete line
-
-                for (const line of lines) {
-                    if (line.startsWith('data:')) {
-                        const jsonString = line.substring(5).trim();
-                        if (jsonString) {
-                            try {
-                                const data = JSON.parse(jsonString);
-
-                                if (data.done) {
-                                    const metaDiv = document.createElement('div');
-                                    metaDiv.className = 'response-meta';
-                                    const metaText = `Generated in ${(data.duration / 1000).toFixed(1)}s • 🌊 Real-time stream`;
-                                    metaDiv.style.color = '#2196f3';
-                                    metaDiv.innerHTML = `<small>${metaText}</small>`;
-                                    aiMessageDiv.appendChild(metaDiv);
-                                    return;
-                                }
-
-                                if (data.text) {
-                                    fullResponse += data.text;
-                                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-                                    chatLog.scrollTop = chatLog.scrollHeight;
-                                }
-                            } catch (e) {
-                                console.error('Error parsing SSE data:', e, 'Raw data:', jsonString);
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('❌ Real-time streaming error:', error);
-            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
-        } finally {
-            // Add the AI's complete response to the history
-            if (fullResponse) {
-                conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
-            }
+        // Update the message with the response
+        fullResponse = data.text || '';
+        aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+        
+        // Add response metadata
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'response-meta';
+        const metaText = `Generated in ${(data.duration / 1000).toFixed(1)}s • ${data.model || 'Gemini'}`;
+        metaDiv.style.color = '#2196f3';
+        metaDiv.innerHTML = `<small>${metaText}</small>`;
+        aiMessageDiv.appendChild(metaDiv);
+        
+        console.log('✅ Chat request completed successfully');
+        
+    } catch (error) {
+        console.error('❌ Chat request error:', error);
+        aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the connection. Please try again.');
+    } finally {
+        // Add the AI's complete response to the history
+        if (fullResponse) {
+            conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
         }
     }
+}
 
     async function sendMessage(e) {
         if (e) e.preventDefault();
         const prompt = chatInput.value.trim();
         if (!prompt) return;
-
-        // Add user message to chat log and history
         addMessage(prompt, 'user-message');
-        conversationHistory.push({ role: "user", parts: [{ text: prompt }] });
-
         chatInput.value = '';
         
         // Start thinking timer and show loading

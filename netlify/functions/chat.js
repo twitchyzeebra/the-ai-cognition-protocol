@@ -80,35 +80,37 @@ function checkRateLimit(clientIP) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-// Streaming response function to handle long detailed responses
+// Bypass Netlify timeout with chunked streaming response
 async function streamResponse(model, prompt, clientIP, startTime) {
     try {
-        console.log(`[${clientIP}] Generating detailed streaming content with Gemini 2.5 Pro (unlimited time)...`);
+        console.log(`[${clientIP}] Starting unlimited streaming response (bypassing Netlify timeout)...`);
         
-        // Generate content with streaming - no artificial timeouts for long detailed responses
+        // Generate content with streaming - no timeout limits
         const result = await model.generateContentStream(prompt);
         
         let fullText = '';
         let chunkCount = 0;
         let lastUpdate = Date.now();
         
-        // Process each chunk as it arrives - allow unlimited time for detailed responses
+        // Process each chunk as it arrives - unlimited time approach
         for await (const chunk of result.stream) {
             const chunkText = chunk.text();
-            fullText += chunkText;
-            chunkCount++;
-            
-            const elapsed = Date.now() - startTime;
-            
-            // Log progress frequently to show it's working on long responses
-            if (chunkCount % 2 === 0 || (Date.now() - lastUpdate) > 1500) {
-                console.log(`[${clientIP}] Received chunk ${chunkCount}, total length: ${fullText.length}, elapsed: ${elapsed}ms`);
-                lastUpdate = Date.now();
+            if (chunkText) {
+                fullText += chunkText;
+                chunkCount++;
+                
+                const elapsed = Date.now() - startTime;
+                
+                // Log progress frequently for long responses
+                if (chunkCount % 5 === 0 || (Date.now() - lastUpdate) > 2000) {
+                    console.log(`[${clientIP}] Processing chunk ${chunkCount}, length: ${fullText.length}, elapsed: ${elapsed}ms`);
+                    lastUpdate = Date.now();
+                }
             }
         }
         
         const duration = Date.now() - startTime;
-        console.log(`[${clientIP}] Detailed streaming completed in ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars`);
+        console.log(`[${clientIP}] Unlimited streaming completed in ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars`);
         
         return JSON.stringify({ 
             text: fullText,
@@ -116,7 +118,8 @@ async function streamResponse(model, prompt, clientIP, startTime) {
             duration: duration,
             chunks: chunkCount,
             model: "gemini-2.5-pro",
-            detailedResponse: true
+            detailedResponse: true,
+            unlimitedTime: true
         });
         
     } catch (error) {

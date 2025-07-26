@@ -212,12 +212,21 @@ document.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(aiMessageDiv);
         chatLog.scrollTop = chatLog.scrollHeight;
         
+        let useUnlimitedStream = false;
+        
         try {
+            console.log('🚀 Starting chat request with smart timeout handling...');
+            
+            // Try regular chat first with timeout detection
+            const startTime = Date.now();
             const response = await fetch('/.netlify/functions/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt })
             });
+            
+            const duration = Date.now() - startTime;
+            console.log(`📊 Regular chat response time: ${duration}ms`);
             
             if (response.status === 206) {
                 // Partial content due to local dev timeout
@@ -227,11 +236,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            if (response.status === 408) {
-                const errorData = await response.json();
-                aiMessageDiv.innerHTML = formatAIResponse('Request timed out. Please try a shorter message or try again later.');
-                aiMessageDiv.classList.remove('streaming');
-                return;
+            if (response.status === 408 || (response.status === 500 && duration > 25000)) {
+                console.log('⏰ Timeout detected, switching to unlimited streaming...');
+                useUnlimitedStream = true;
+                throw new Error('Timeout detected - switching to unlimited mode');
             }
             
             if (response.status === 429) {
@@ -242,8 +250,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                const errorText = await response.text();
+                console.log('❌ Regular chat failed:', response.status, errorText);
+                
+                // Check if it might be a timeout issue
+                if (duration > 20000 || errorText.includes('timeout') || errorText.includes('timed out')) {
+                    console.log('🔄 Timeout suspected, trying unlimited streaming...');
+                    useUnlimitedStream = true;
+                    throw new Error('Timeout suspected - switching to unlimited mode');
+                }
+                
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
             
             const data = await response.json();
@@ -258,7 +275,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 metaDiv.className = 'response-meta';
                 let metaText = `Generated in ${(data.duration/1000).toFixed(1)}s • ${data.chunks} chunks • ${data.text.length} characters`;
                 
-                if (data.partial) {
+                if (data.unlimited) {
+                    metaText += ' • 🚀 Unlimited streaming';
+                    metaDiv.style.color = '#4caf50';
+                } else if (data.partial) {
                     metaText += ' • ⚠️ Partial response (time limit reached)';
                     metaDiv.style.color = '#ff9800';
                 }
@@ -272,9 +292,52 @@ document.addEventListener('DOMContentLoaded', () => {
             aiMessageDiv.classList.remove('streaming');
             
         } catch (error) {
-            console.error('Error fetching AI response:', error);
+            console.error('❌ Error in regular chat:', error.message);
+            
+            // Try unlimited streaming if regular chat failed due to timeout
+            if (useUnlimitedStream || error.message.includes('timeout') || error.message.includes('switching to unlimited')) {
+                console.log('🔄 Attempting unlimited streaming fallback...');
+                
+                try {
+                    aiMessageDiv.textContent = 'Switching to unlimited mode - AI is thinking deeply...';
+                    
+                    const unlimitedResponse = await fetch('/.netlify/functions/chat-stream', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt })
+                    });
+                    
+                    if (!unlimitedResponse.ok) {
+                        throw new Error(`Unlimited streaming failed: ${unlimitedResponse.status}`);
+                    }
+                    
+                    const unlimitedData = await unlimitedResponse.json();
+                    console.log('✅ Unlimited streaming successful!');
+                    
+                    // Display the unlimited response
+                    aiMessageDiv.innerHTML = formatAIResponse(unlimitedData.response);
+                    
+                    // Add metadata about unlimited response
+                    const metaDiv = document.createElement('div');
+                    metaDiv.className = 'response-meta';
+                    metaDiv.style.color = '#4caf50';
+                    metaDiv.innerHTML = `<small>🚀 Unlimited streaming: ${(unlimitedData.duration/1000).toFixed(1)}s • ${unlimitedData.chunks} chunks • ${unlimitedData.length} characters</small>`;
+                    aiMessageDiv.appendChild(metaDiv);
+                    
+                    aiMessageDiv.classList.remove('streaming');
+                    return;
+                    
+                } catch (unlimitedError) {
+                    console.error('❌ Unlimited streaming also failed:', unlimitedError);
+                    aiMessageDiv.innerHTML = formatAIResponse('Both regular and unlimited streaming failed. Please try again.');
+                    aiMessageDiv.classList.remove('streaming');
+                    return;
+                }
+            }
+            
+            // Handle other errors
             if (error.name === 'AbortError') {
-                aiMessageDiv.innerHTML = formatAIResponse('Request timed out. Please try a shorter message or try again later.');
+                aiMessageDiv.innerHTML = formatAIResponse('Request timed out. Trying unlimited mode next time...');
             } else {
                 aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong. Please try again.');
             }

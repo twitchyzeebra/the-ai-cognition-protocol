@@ -34,9 +34,57 @@ function decryptSystemPrompt(encryptedData, password) {
     }
 }
 
-// Check for missing environment variables
-if (!API_KEY) {
-    console.error("Missing GEMINI_API_KEY environment variable.");
+// Progressive streaming function - no timeouts, full responses
+async function getProgressiveStreamResponse(model, prompt, clientIP) {
+    const startTime = Date.now();
+    
+    try {
+        console.log(`[${clientIP}] Starting progressive streaming response...`);
+        
+        // Generate content with streaming - let it complete naturally
+        const result = await model.generateContentStream(prompt);
+        
+        let fullText = '';
+        let chunkCount = 0;
+        
+        // Process chunks as they come - no artificial timeouts
+        for await (const chunk of result.stream) {
+            const elapsed = Date.now() - startTime;
+            
+            const chunkText = chunk.text();
+            if (chunkText) {
+                fullText += chunkText;
+                chunkCount++;
+                
+                // Log progress every 10 chunks
+                if (chunkCount % 10 === 0) {
+                    console.log(`[${clientIP}] Progressive streaming: ${chunkCount} chunks, ${fullText.length} chars, ${elapsed}ms`);
+                }
+            }
+        }
+        
+        const duration = Date.now() - startTime;
+        console.log(`[${clientIP}] Progressive streaming completed: ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars`);
+        
+        return {
+            success: true,
+            text: fullText,
+            duration: duration,
+            chunks: chunkCount,
+            length: fullText.length,
+            streaming: true
+        };
+        
+    } catch (error) {
+        const duration = Date.now() - startTime;
+        console.error(`[${clientIP}] Progressive streaming error after ${duration}ms:`, error.message);
+        return {
+            success: false,
+            error: error.message,
+            text: 'Error in progressive streaming response.',
+            duration: duration
+        };
+    }
 }
 
 // Rate limiting storage (in-memory for simplicity)
@@ -240,17 +288,44 @@ exports.handler = async (event) => {
 
         console.log(`[${clientIP}] Starting streaming response`);
 
-        // Use streaming to avoid lambda-local timeout
-        return {
-            statusCode: 200,
-            headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type'
-            },
-            body: await streamResponse(model, fullPrompt, clientIP, startTime)
-        };
+        // Use progressive streaming by default - no timeouts, full responses
+        const result = await getProgressiveStreamResponse(model, fullPrompt, clientIP);
+        
+        if (result.success) {
+            return {
+                statusCode: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type'
+                },
+                body: JSON.stringify({
+                    text: result.text,
+                    streaming: result.streaming,
+                    progressive: true,
+                    duration: result.duration,
+                    chunks: result.chunks,
+                    length: result.length,
+                    model: "gemini-2.5-pro"
+                })
+            };
+        } else {
+            return {
+                statusCode: 500,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type'
+                },
+                body: JSON.stringify({
+                    error: result.error,
+                    text: result.text,
+                    duration: result.duration
+                })
+            };
+        }
 
     } catch (error) {
         const duration = Date.now() - startTime;

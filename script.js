@@ -194,6 +194,71 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`(.+?)`/g, '<code>$1</code>');
     }
 
+    // Handle browser streaming with real-time console updates
+    async function sendStreamingMessage(prompt, aiMessageDiv) {
+        const startTime = Date.now();
+        
+        try {
+            console.log('🚀 Starting browser streaming chat request...');
+            console.log(`📝 User prompt: "${prompt.substring(0, 100)}..."`);
+            
+            const response = await fetch('/.netlify/functions/chat-stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.browserStream && data.chunks) {
+                console.log(`🔄 Processing ${data.chunks.length} chunks for real-time display...`);
+                
+                // Simulate real-time streaming in the browser
+                let displayedText = '';
+                
+                for (let i = 0; i < data.chunks.length; i++) {
+                    const chunk = data.chunks[i];
+                    displayedText += chunk.text;
+                    
+                    // Update the message div
+                    aiMessageDiv.innerHTML = formatAIResponse(displayedText);
+                    chatLog.scrollTop = chatLog.scrollHeight;
+                    
+                    // Log progress in browser console
+                    console.log(`📊 Chunk ${chunk.chunkNumber}/${data.chunks.length}: +${chunk.text.length} chars (total: ${chunk.totalLength}, ${chunk.elapsed}ms)`);
+                    
+                    // Small delay to simulate real-time streaming
+                    if (i < data.chunks.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    }
+                }
+                
+                // Add final metadata
+                const metaDiv = document.createElement('div');
+                metaDiv.className = 'response-meta';
+                const metaText = `Generated in ${(data.duration/1000).toFixed(1)}s • ${data.chunkCount} chunks • ${data.length} characters • 🌊 Browser streaming`;
+                metaDiv.style.color = '#2196f3';
+                metaDiv.innerHTML = `<small>${metaText}</small>`;
+                aiMessageDiv.appendChild(metaDiv);
+                
+                console.log(`✅ Browser streaming complete: ${data.duration}ms, ${data.chunkCount} chunks, ${data.length} chars`);
+                
+            } else {
+                // Fallback to regular response
+                aiMessageDiv.innerHTML = formatAIResponse(data.response || data.text);
+                console.log('📝 Used fallback response display');
+            }
+            
+        } catch (error) {
+            console.error('❌ Browser streaming error:', error);
+            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with streaming. Please try again.');
+        }
+    }
+
     async function sendMessage(e) {
         if (e) e.preventDefault();
         const prompt = chatInput.value.trim();
@@ -212,142 +277,13 @@ document.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(aiMessageDiv);
         chatLog.scrollTop = chatLog.scrollHeight;
         
-        let useUnlimitedStream = false;
+        // Use browser streaming for real-time console updates
+        await sendStreamingMessage(prompt, aiMessageDiv);
         
-        try {
-            console.log('🚀 Starting chat request with smart timeout handling...');
-            
-            // Try regular chat first with timeout detection
-            const startTime = Date.now();
-            const response = await fetch('/.netlify/functions/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt })
-            });
-            
-            const duration = Date.now() - startTime;
-            console.log(`📊 Regular chat response time: ${duration}ms`);
-            
-            if (response.status === 206) {
-                // Partial content due to local dev timeout
-                const data = await response.json();
-                aiMessageDiv.innerHTML = formatAIResponse(data.text + '\n\n[Note: Response truncated due to local development timeout limits]');
-                aiMessageDiv.classList.remove('streaming');
-                return;
-            }
-            
-            if (response.status === 408 || (response.status === 500 && duration > 25000)) {
-                console.log('⏰ Timeout detected, switching to unlimited streaming...');
-                useUnlimitedStream = true;
-                throw new Error('Timeout detected - switching to unlimited mode');
-            }
-            
-            if (response.status === 429) {
-                const errorData = await response.json();
-                aiMessageDiv.innerHTML = formatAIResponse('Rate limit exceeded. Please wait before sending another message. (Maximum 4 messages per minute)');
-                aiMessageDiv.classList.remove('streaming');
-                return;
-            }
-            
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.log('❌ Regular chat failed:', response.status, errorText);
-                
-                // Check if it might be a timeout issue
-                if (duration > 20000 || errorText.includes('timeout') || errorText.includes('timed out')) {
-                    console.log('🔄 Timeout suspected, trying unlimited streaming...');
-                    useUnlimitedStream = true;
-                    throw new Error('Timeout suspected - switching to unlimited mode');
-                }
-                
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            // Handle streaming response
-            if (data.streaming) {
-                // Apply formatting to the AI response
-                aiMessageDiv.innerHTML = formatAIResponse(data.text);
-                
-                // Add metadata about the response
-                const metaDiv = document.createElement('div');
-                metaDiv.className = 'response-meta';
-                let metaText = `Generated in ${(data.duration/1000).toFixed(1)}s • ${data.chunks} chunks • ${data.text.length} characters`;
-                
-                if (data.unlimited) {
-                    metaText += ' • 🚀 Unlimited streaming';
-                    metaDiv.style.color = '#4caf50';
-                } else if (data.partial) {
-                    metaText += ' • ⚠️ Partial response (time limit reached)';
-                    metaDiv.style.color = '#ff9800';
-                }
-                
-                metaDiv.innerHTML = `<small>${metaText}</small>`;
-                aiMessageDiv.appendChild(metaDiv);
-            } else {
-                aiMessageDiv.innerHTML = formatAIResponse(data.text);
-            }
-            
-            aiMessageDiv.classList.remove('streaming');
-            
-        } catch (error) {
-            console.error('❌ Error in regular chat:', error.message);
-            
-            // Try progressive streaming if regular chat failed due to timeout
-            if (useUnlimitedStream || error.message.includes('timeout') || error.message.includes('switching to unlimited')) {
-                console.log('🔄 Attempting progressive streaming (no timeouts)...');
-                
-                try {
-                    aiMessageDiv.textContent = 'Switching to progressive mode - AI is generating response...';
-                    
-                    // Use the progressive streaming endpoint - gets full response naturally
-                    const progressiveResponse = await fetch('/.netlify/functions/chat-progressive', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt })
-                    });
-                    
-                    if (!progressiveResponse.ok) {
-                        throw new Error(`Progressive streaming failed: ${progressiveResponse.status}`);
-                    }
-                    
-                    const progressiveData = await progressiveResponse.json();
-                    console.log('✅ Progressive streaming successful!');
-                    
-                    // Display the complete response
-                    aiMessageDiv.innerHTML = formatAIResponse(progressiveData.response);
-                    
-                    // Add metadata about progressive response
-                    const metaDiv = document.createElement('div');
-                    metaDiv.className = 'response-meta';
-                    metaDiv.style.color = '#4caf50';
-                    metaDiv.innerHTML = `<small>🚀 Progressive streaming: ${(progressiveData.duration/1000).toFixed(1)}s • ${progressiveData.chunks} chunks • ${progressiveData.length} characters • Full response</small>`;
-                    aiMessageDiv.appendChild(metaDiv);
-                    
-                    aiMessageDiv.classList.remove('streaming');
-                    return;
-                    
-                } catch (progressiveError) {
-                    console.error('❌ Progressive streaming also failed:', progressiveError);
-                    aiMessageDiv.innerHTML = formatAIResponse('Both regular and progressive streaming failed. Please try again.');
-                    aiMessageDiv.classList.remove('streaming');
-                    return;
-                }
-            }
-            
-            // Handle other errors
-            if (error.name === 'AbortError') {
-                aiMessageDiv.innerHTML = formatAIResponse('Request timed out. Trying unlimited mode next time...');
-            } else {
-                aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong. Please try again.');
-            }
-            aiMessageDiv.classList.remove('streaming');
-        } finally {
-            // Stop thinking timer
-            stopThinkingTimer();
-            loadingIndicator.classList.add('hidden');
-        }
+        // Clean up
+        aiMessageDiv.classList.remove('streaming');
+        stopThinkingTimer();
+        loadingIndicator.classList.add('hidden');
     }
 
     // Simulate typing effect

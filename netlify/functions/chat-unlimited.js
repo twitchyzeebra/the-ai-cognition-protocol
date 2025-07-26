@@ -37,12 +37,12 @@ function decryptSystemPrompt(encryptedData, password) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-// Multi-part response system
-async function getMultiPartResponse(model, prompt, clientIP, requestId = null) {
+// Real-time streaming response system
+async function getRealTimeStreamResponse(model, prompt, clientIP, requestId = null) {
     const startTime = Date.now();
     
     try {
-        console.log(`[${clientIP}] Starting multi-part response (Request ID: ${requestId})...`);
+        console.log(`[${clientIP}] Starting real-time streaming response (Request ID: ${requestId})...`);
         
         // Special prompt instruction for long responses
         const longResponsePrompt = `${prompt}\n\n[INSTRUCTION: If this is a complex topic that requires a long response, please provide a comprehensive and detailed answer. Take your time to be thorough and complete.]`;
@@ -52,73 +52,54 @@ async function getMultiPartResponse(model, prompt, clientIP, requestId = null) {
         
         let fullText = '';
         let chunkCount = 0;
-        let parts = [];
-        let currentPart = '';
-        const maxPartSize = 2000; // Split into manageable parts
+        const chunks = [];
         
-        // Process chunks and split into parts
+        // Process chunks in real-time
         for await (const chunk of result.stream) {
             const elapsed = Date.now() - startTime;
-            
-            // Generous timeout - break at 20 seconds to leave more buffer
-            if (elapsed > 20000) {
-                console.log(`[${clientIP}] Breaking at 20s to avoid timeout, collected ${fullText.length} chars`);
-                break;
-            }
             
             const chunkText = chunk.text();
             if (chunkText) {
                 fullText += chunkText;
-                currentPart += chunkText;
                 chunkCount++;
                 
-                // Split into parts to enable continuation
-                if (currentPart.length > maxPartSize) {
-                    parts.push(currentPart);
-                    currentPart = '';
-                }
+                // Store each chunk for real-time sending
+                chunks.push({
+                    text: chunkText,
+                    chunkNumber: chunkCount,
+                    elapsed: elapsed,
+                    totalLength: fullText.length
+                });
                 
-                // Log progress
-                if (chunkCount % 2 === 0) {
-                    console.log(`[${clientIP}] Multi-part progress: ${chunkCount} chunks, ${fullText.length} chars, ${elapsed}ms`);
+                // Log progress every 10 chunks or every 5 seconds
+                if (chunkCount % 10 === 0 || elapsed % 5000 < 100) {
+                    console.log(`[${clientIP}] Real-time streaming: ${chunkCount} chunks, ${fullText.length} chars, ${elapsed}ms`);
                 }
             }
         }
         
-        // Add any remaining content
-        if (currentPart.length > 0) {
-            parts.push(currentPart);
-        }
-        
         const duration = Date.now() - startTime;
         
-        // Determine if we need continuation based on whether we hit the timeout
-        const hitTimeout = duration > 19000; // We broke at 20s, so anything over 19s likely hit timeout
-        const hasSubstantialContent = fullText.length > 500;
-        const seemsIncomplete = fullText.length > 800 && (!fullText.match(/\.\s*$|!\s*$|\?\s*$|:\s*$/) || hitTimeout);
-        
-        const needsContinuation = hitTimeout && hasSubstantialContent;
-        
-        console.log(`[${clientIP}] Multi-part response completed: ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars, ${parts.length} parts, needsContinuation: ${needsContinuation}`);
+        console.log(`[${clientIP}] Real-time streaming completed: ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars`);
         
         return {
             success: true,
             text: fullText,
+            chunks: chunks,
             duration: duration,
-            chunks: chunkCount,
+            chunkCount: chunkCount,
             length: fullText.length,
-            parts: parts,
-            needsContinuation: needsContinuation,
             requestId: requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         };
         
     } catch (error) {
         const duration = Date.now() - startTime;
-        console.error(`[${clientIP}] Multi-part response error after ${duration}ms:`, error.message);
+        console.error(`[${clientIP}] Real-time streaming error after ${duration}ms:`, error.message);
+        
         return {
             success: false,
             error: error.message,
-            text: 'Error in multi-part response generation.',
+            text: 'Error in real-time streaming response.',
             duration: duration
         };
     }
@@ -195,28 +176,28 @@ exports.handler = async (event) => {
         let fullPrompt;
         
         if (continueFrom) {
-            // This is a continuation request - preserve context better
-            const lastSentence = continueFrom.split(/[.!?]+/).pop() || '';
-            fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\n\nPrevious response (continue from this point): ${continueFrom}\n\nAI: [Continue seamlessly from where you left off${lastSentence ? `, picking up after: "${lastSentence.trim()}"` : ''}. Do not repeat what was already said. Maintain the same tone, style, and depth of analysis. Only provide the NEW continuation content.]`;
+            // This is a continuation request - be more explicit about what we want
+            const endingContext = continueFrom.slice(-300); // Get last 300 chars for context
+            fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\n\nYou were providing a response and it was cut off. Here's what you said so far:\n\n"${endingContext}"\n\nAI: [Continue writing from exactly where you left off. Pick up mid-sentence if needed and keep going with your response. Do not start over or summarize what you already said.]`;
         } else {
             // This is a new request
             fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\nAI:`;
         }
         
-        // Get multi-part response
-        const result = await getMultiPartResponse(model, fullPrompt, clientIP, requestIdentifier);
+        // Get real-time streaming response - full content, no timeouts
+        const result = await getRealTimeStreamResponse(model, fullPrompt, clientIP, requestIdentifier);
         
         if (result.success) {
             const response = {
                 response: result.text,
                 streaming: true,
-                multiPart: true,
+                realTimeStream: true,
                 isContinuation: !!continueFrom,
                 duration: result.duration,
-                chunks: result.chunks,
+                chunks: result.chunkCount,
                 length: result.length,
-                parts: result.parts.length,
-                needsContinuation: result.needsContinuation,
+                fullResponse: true, // Always full response
+                needsContinuation: false, // Never need continuation with real-time streaming
                 requestId: result.requestId,
                 model: "gemini-2.5-pro"
             };

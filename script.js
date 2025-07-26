@@ -294,108 +294,43 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('❌ Error in regular chat:', error.message);
             
-            // Try unlimited streaming if regular chat failed due to timeout
+            // Try progressive streaming if regular chat failed due to timeout
             if (useUnlimitedStream || error.message.includes('timeout') || error.message.includes('switching to unlimited')) {
-                console.log('🔄 Attempting multi-part unlimited streaming fallback...');
+                console.log('🔄 Attempting progressive streaming (no timeouts)...');
                 
                 try {
-                    aiMessageDiv.textContent = 'Switching to unlimited mode - AI is thinking deeply...';
+                    aiMessageDiv.textContent = 'Switching to progressive mode - AI is generating response...';
                     
-                    // Use the new multi-part unlimited endpoint
-                    let fullResponse = '';
-                    let requestId = null;
-                    let attemptCount = 0;
-                    const maxAttempts = 5; // Allow up to 5 continuation requests for very long responses
+                    // Use the progressive streaming endpoint - gets full response naturally
+                    const progressiveResponse = await fetch('/.netlify/functions/chat-progressive', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt })
+                    });
                     
-                    while (attemptCount < maxAttempts) {
-                        attemptCount++;
-                        console.log(`🔄 Multi-part request attempt ${attemptCount}/${maxAttempts}`);
-                        
-                        const requestBody = { 
-                            prompt: prompt,
-                            requestId: requestId,
-                            continueFrom: fullResponse.length > 2000 ? 
-                                fullResponse.slice(-1500) + '...[CONTINUATION NEEDED]' : 
-                                fullResponse
-                        };
-                        
-                        aiMessageDiv.textContent = `Getting response part ${attemptCount}... (unlimited mode) - ${fullResponse.length} characters so far`;
-                        
-                        const unlimitedResponse = await fetch('/.netlify/functions/chat-unlimited', {
-                            method: 'POST',
-                            headers: { 
-                                'Content-Type': 'application/json',
-                                'X-Request-ID': requestId || `multipart_${Date.now()}`
-                            },
-                            body: JSON.stringify(requestBody)
-                        });
-                        
-                        if (!unlimitedResponse.ok) {
-                            throw new Error(`Multi-part unlimited streaming failed: ${unlimitedResponse.status}`);
-                        }
-                        
-                        const unlimitedData = await unlimitedResponse.json();
-                        console.log(`✅ Multi-part attempt ${attemptCount} successful!`);
-                        
-                        // Handle response accumulation properly
-                        if (attemptCount === 1) {
-                            // First part - set the initial response
-                            fullResponse = unlimitedData.response;
-                            requestId = unlimitedData.requestId;
-                        } else {
-                            // Continuation part - append the new content
-                            // Only append if this is actually new content
-                            if (unlimitedData.isContinuation && unlimitedData.response.trim()) {
-                                fullResponse += ' ' + unlimitedData.response.trim();
-                            } else if (!unlimitedData.isContinuation) {
-                                // If backend returned full response again, replace it
-                                fullResponse = unlimitedData.response;
-                            }
-                        }
-                        
-                        // Update display with accumulated progress
-                        aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-                        aiMessageDiv.scrollTop = aiMessageDiv.scrollHeight;
-                        
-                        // Log continuation check details
-                        console.log(`📊 Part ${attemptCount} analysis:`, {
-                            needsContinuation: unlimitedData.needsContinuation,
-                            currentPartLength: unlimitedData.length,
-                            totalAccumulatedLength: fullResponse.length,
-                            duration: unlimitedData.duration,
-                            isContinuation: unlimitedData.isContinuation
-                        });
-                        
-                        // Check if we need to continue - improved logic
-                        const shouldContinue = unlimitedData.needsContinuation && 
-                                             unlimitedData.length > 200 && 
-                                             attemptCount < maxAttempts &&
-                                             fullResponse.length > 800; // Only continue if we have substantial content
-                        
-                        if (!shouldContinue) {
-                            console.log('🎉 Multi-part response complete!');
-                            break;
-                        }
-                        
-                        console.log('🔄 Response needs continuation, preparing next part...');
-                        
-                        // Brief pause between requests
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    if (!progressiveResponse.ok) {
+                        throw new Error(`Progressive streaming failed: ${progressiveResponse.status}`);
                     }
                     
-                    // Add final metadata
+                    const progressiveData = await progressiveResponse.json();
+                    console.log('✅ Progressive streaming successful!');
+                    
+                    // Display the complete response
+                    aiMessageDiv.innerHTML = formatAIResponse(progressiveData.response);
+                    
+                    // Add metadata about progressive response
                     const metaDiv = document.createElement('div');
                     metaDiv.className = 'response-meta';
                     metaDiv.style.color = '#4caf50';
-                    metaDiv.innerHTML = `<small>🚀 Multi-part unlimited streaming: ${attemptCount} parts • ${fullResponse.length} total characters</small>`;
+                    metaDiv.innerHTML = `<small>🚀 Progressive streaming: ${(progressiveData.duration/1000).toFixed(1)}s • ${progressiveData.chunks} chunks • ${progressiveData.length} characters • Full response</small>`;
                     aiMessageDiv.appendChild(metaDiv);
                     
                     aiMessageDiv.classList.remove('streaming');
                     return;
                     
-                } catch (unlimitedError) {
-                    console.error('❌ Multi-part unlimited streaming also failed:', unlimitedError);
-                    aiMessageDiv.innerHTML = formatAIResponse('Both regular and unlimited streaming failed. Please try again.');
+                } catch (progressiveError) {
+                    console.error('❌ Progressive streaming also failed:', progressiveError);
+                    aiMessageDiv.innerHTML = formatAIResponse('Both regular and progressive streaming failed. Please try again.');
                     aiMessageDiv.classList.remove('streaming');
                     return;
                 }

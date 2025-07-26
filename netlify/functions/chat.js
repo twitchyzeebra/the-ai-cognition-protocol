@@ -39,58 +39,62 @@ function decryptSystemPrompt(encryptedData, password) {
 
 // True streaming function using Node.js Readable stream
 async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream) {
-    const startTime = Date.now();
+    return new Promise(async (resolve, reject) => {
+        const startTime = Date.now();
 
-    try {
-        console.log(`[${clientIP}] Starting REAL-TIME streaming response...`);
-        
-        const result = await model.generateContentStream(prompt);
-        
-        let fullText = '';
-        let chunkCount = 0;
-        
-        const keepAliveInterval = setInterval(() => {
-            readableStream.push(':keep-alive\n\n');
-            console.log(`[${clientIP}] Sent keep-alive ping.`);
-        }, 15000);
+        try {
+            console.log(`[${clientIP}] Starting REAL-TIME streaming response...`);
+            
+            const result = await model.generateContentStream(prompt);
+            
+            let fullText = '';
+            let chunkCount = 0;
+            
+            const keepAliveInterval = setInterval(() => {
+                readableStream.push(':keep-alive\n\n');
+                console.log(`[${clientIP}] Sent keep-alive ping.`);
+            }, 15000);
 
-        for await (const chunk of result.stream) {
-            const chunkText = chunk.text();
-            if (chunkText) {
-                fullText += chunkText;
-                chunkCount++;
-                
-                const eventData = {
-                    text: chunkText,
-                    chunk: chunkCount,
-                    totalLength: fullText.length,
-                    elapsed: Date.now() - startTime
-                };
-                readableStream.push(`data: ${JSON.stringify(eventData)}\n\n`);
+            for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                if (chunkText) {
+                    fullText += chunkText;
+                    chunkCount++;
+                    
+                    const eventData = {
+                        text: chunkText,
+                        chunk: chunkCount,
+                        totalLength: fullText.length,
+                        elapsed: Date.now() - startTime
+                    };
+                    readableStream.push(`data: ${JSON.stringify(eventData)}\n\n`);
+                }
             }
-        }
-        
-        clearInterval(keepAliveInterval);
-        const finalEvent = {
-            done: true,
-            duration: Date.now() - startTime,
-            totalLength: fullText.length,
-            totalChunks: chunkCount
-        };
-        readableStream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
-        
-        console.log(`[${clientIP}] Real-time streaming completed: ${Date.now() - startTime}ms`);
+            
+            clearInterval(keepAliveInterval);
+            const finalEvent = {
+                done: true,
+                duration: Date.now() - startTime,
+                totalLength: fullText.length,
+                totalChunks: chunkCount
+            };
+            readableStream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
+            
+            console.log(`[${clientIP}] Real-time streaming completed: ${Date.now() - startTime}ms`);
+            resolve(); // Resolve the promise when streaming is done
 
-    } catch (error) {
-        console.error(`[${clientIP}] Real-time streaming error:`, error.message);
-        const errorEvent = {
-            error: 'Error during streaming.',
-            message: error.message
-        };
-        readableStream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
-    } finally {
-        readableStream.push(null); // End the stream
-    }
+        } catch (error) {
+            console.error(`[${clientIP}] Real-time streaming error:`, error.message);
+            const errorEvent = {
+                error: 'Error during streaming.',
+                message: error.message
+            };
+            readableStream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
+            reject(error); // Reject the promise on error
+        } finally {
+            readableStream.push(null); // End the stream
+        }
+    });
 }
 
 // Rate limiting

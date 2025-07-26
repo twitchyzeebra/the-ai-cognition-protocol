@@ -74,6 +74,16 @@ exports.handler = stream(async (event, context) => {
         context.callbackWaitsForEmptyEventLoop = false;
     }
 
+    // Add debugging logs to track execution
+    console.log("Event received:", event);
+    console.log("Context received:", context);
+
+    // Log environment variables for debugging
+    console.log("Environment Variables:", {
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY ? "[SET]" : "[NOT SET]",
+        NETLIFY: process.env.NETLIFY ? "[SET]" : "[NOT SET]",
+    });
+
     // The frontend now sends POST requests with a JSON body.
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: 'Method Not Allowed' };

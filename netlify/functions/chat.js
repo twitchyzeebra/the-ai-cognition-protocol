@@ -173,7 +173,11 @@ exports.handler = stream(async (event) => {
 
         const readableStream = new Readable({ read() {} });
         
-        // Start generating the response without awaiting it
+        // Immediately send a connection confirmation event
+        readableStream.push(`data: ${JSON.stringify({ event: 'connection-established' })}\n\n`);
+        console.log(`[${clientIP}] Pushed connection-established event.`);
+
+        // Start generating the AI response without awaiting it
         getRealtimeStreamResponse(model, fullPrompt, clientIP, readableStream);
 
         return {

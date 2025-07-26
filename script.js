@@ -305,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let fullResponse = '';
                     let requestId = null;
                     let attemptCount = 0;
-                    const maxAttempts = 3; // Allow up to 3 continuation requests
+                    const maxAttempts = 5; // Allow up to 5 continuation requests for very long responses
                     
                     while (attemptCount < maxAttempts) {
                         attemptCount++;
@@ -347,11 +347,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Update display with current progress
                         aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
                         
-                        // Check if we need to continue
-                        if (!unlimitedData.needsContinuation || unlimitedData.length < 1000) {
+                        // Log continuation check details
+                        console.log(`📊 Part ${attemptCount} analysis:`, {
+                            needsContinuation: unlimitedData.needsContinuation,
+                            currentPartLength: unlimitedData.length,
+                            totalLength: fullResponse.length,
+                            duration: unlimitedData.duration
+                        });
+                        
+                        // Check if we need to continue - improved logic
+                        const shouldContinue = unlimitedData.needsContinuation && 
+                                             unlimitedData.length > 300 && 
+                                             attemptCount < maxAttempts;
+                        
+                        if (!shouldContinue) {
                             console.log('🎉 Multi-part response complete!');
                             break;
                         }
+                        
+                        console.log('🔄 Response needs continuation, preparing next part...');
                         
                         // Brief pause between requests
                         await new Promise(resolve => setTimeout(resolve, 1000));

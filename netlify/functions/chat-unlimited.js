@@ -60,9 +60,9 @@ async function getMultiPartResponse(model, prompt, clientIP, requestId = null) {
         for await (const chunk of result.stream) {
             const elapsed = Date.now() - startTime;
             
-            // Generous timeout - break at 23 seconds to leave buffer
-            if (elapsed > 23000) {
-                console.log(`[${clientIP}] Breaking at 23s to avoid timeout, collected ${fullText.length} chars`);
+            // Generous timeout - break at 20 seconds to leave more buffer
+            if (elapsed > 20000) {
+                console.log(`[${clientIP}] Breaking at 20s to avoid timeout, collected ${fullText.length} chars`);
                 break;
             }
             
@@ -91,9 +91,15 @@ async function getMultiPartResponse(model, prompt, clientIP, requestId = null) {
         }
         
         const duration = Date.now() - startTime;
-        const needsContinuation = duration > 22000 && fullText.length > 1000;
         
-        console.log(`[${clientIP}] Multi-part response completed: ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars, ${parts.length} parts`);
+        // Determine if we need continuation based on whether we hit the timeout
+        const hitTimeout = duration > 19000; // We broke at 20s, so anything over 19s likely hit timeout
+        const hasSubstantialContent = fullText.length > 500;
+        const seemsIncomplete = fullText.length > 800 && (!fullText.match(/\.\s*$|!\s*$|\?\s*$|:\s*$/) || hitTimeout);
+        
+        const needsContinuation = hitTimeout && hasSubstantialContent;
+        
+        console.log(`[${clientIP}] Multi-part response completed: ${duration}ms, ${chunkCount} chunks, ${fullText.length} chars, ${parts.length} parts, needsContinuation: ${needsContinuation}`);
         
         return {
             success: true,
@@ -189,8 +195,9 @@ exports.handler = async (event) => {
         let fullPrompt;
         
         if (continueFrom) {
-            // This is a continuation request
-            fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\n\nPrevious response (partial): ${continueFrom}\n\nAI: [Continue the response from where you left off, maintaining the same tone and context]`;
+            // This is a continuation request - preserve context better
+            const lastSentence = continueFrom.split(/[.!?]+/).pop() || '';
+            fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\n\nPrevious response (continue from this point): ${continueFrom}\n\nAI: [Continue seamlessly from where you left off${lastSentence ? `, picking up after: "${lastSentence.trim()}"` : ''}. Do not repeat what was already said. Maintain the same tone, style, and depth of analysis.]`;
         } else {
             // This is a new request
             fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\nAI:`;

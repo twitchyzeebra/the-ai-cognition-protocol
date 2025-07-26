@@ -81,128 +81,68 @@ function loadSystemPrompt() {
 }
 
 // Streaming handler that sends chunks in real-time
-exports.handler = stream(async (event, context) => {
-    // Add debugging logs to track execution
-    console.log("Function started");
-    console.log("Environment Variables:", {
-        GEMINI_API_KEY: process.env.GEMINI_API_KEY ? "[SET]" : "[NOT SET]",
-        NETLIFY: process.env.NETLIFY ? "[SET]" : "[NOT SET]",
-    });
+exports.handler = stream(async (event, response) => {
+    // Set headers for streaming
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Content-Type', 'text/event-stream');
+    response.setHeader('Cache-Control', 'no-cache');
+    response.setHeader('Connection', 'keep-alive');
 
     // Handle preflight requests
     if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 200,
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            },
-            body: '',
-        };
+        response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        response.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        response.statusCode = 200;
+        response.end();
+        return;
     }
 
     // Only allow POST requests
     if (event.httpMethod !== 'POST') {
-        return { 
-            statusCode: 405, 
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-            },
-            body: JSON.stringify({ error: 'Method Not Allowed' })
-        };
+        response.statusCode = 405;
+        response.end(JSON.stringify({ error: 'Method Not Allowed' }));
+        return;
     }
 
     try {
-        console.log("Parsing request body");
         const body = JSON.parse(event.body);
         const { prompt, history } = body;
 
         if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-            return { 
-                statusCode: 400, 
-                headers: {
-                    'Access-Control-Allow-Origin': '*',
-                },
-                body: JSON.stringify({ error: 'Invalid prompt: Prompt must be a non-empty string.' })
-            };
+            response.statusCode = 400;
+            response.end(JSON.stringify({ error: 'Invalid prompt: Prompt must be a non-empty string.' }));
+            return;
         }
 
-        console.log("Loading system prompt");
         const systemPrompt = loadSystemPrompt();
-        
-        console.log("Initializing Gemini model");
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         
-        // Prepare history with system prompt
         let fullHistory = Array.isArray(history) ? [...history] : [];
         if (systemPrompt && (!fullHistory.length || fullHistory[0].role !== 'user')) {
             fullHistory.unshift({ role: 'user', parts: [{ text: systemPrompt }] });
         }
 
-        console.log("Starting chat");
-        const chat = model.startChat({
-            history: fullHistory,
-        });
-
-        console.log("Sending message stream");
+        const chat = model.startChat({ history: fullHistory });
         const result = await chat.sendMessageStream(prompt);
 
-        // Create a readable stream for real-time streaming
-        const { Readable } = require('stream');
-        const readableStream = new Readable({
-            read() {}
-        });
-
-        // Start streaming chunks immediately
-        (async () => {
-            try {
-                // Send start signal
-                readableStream.push('data: {"type":"start"}\n\n');
-                
-                for await (const chunk of result.stream) {
-                    const chunkText = chunk.text();
-                    if (chunkText) {
-                        // Send each chunk immediately
-                        const sseData = `data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`;
-                        readableStream.push(sseData);
-                    }
-                }
-                
-                // Send completion signal
-                readableStream.push('data: {"type":"done"}\n\n');
-                readableStream.push(null); // End stream
-                console.log("Response complete");
-                
-            } catch (streamError) {
-                console.error("Stream error:", streamError);
-                readableStream.push(`data: ${JSON.stringify({type:"error",message:streamError.message})}\n\n`);
-                readableStream.push(null);
+        // Write chunks directly to the response stream
+        response.write('data: {"type":"start"}\n\n');
+        
+        for await (const chunk of result.stream) {
+            const chunkText = chunk.text();
+            if (chunkText) {
+                response.write(`data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`);
             }
-        })();
-
-        return {
-            statusCode: 200,
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            },
-            body: readableStream,
-        };
+        }
+        
+        response.write('data: {"type":"done"}\n\n');
+        console.log("Response complete");
 
     } catch (error) {
         console.error("Handler error:", error);
-        return {
-            statusCode: 500,
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-            },
-            body: JSON.stringify({ 
-                error: 'Internal Server Error: ' + error.message,
-                success: false
-            }),
-        };
+        response.write(`data: ${JSON.stringify({type:"error",message:error.message})}\n\n`);
+    } finally {
+        // End the stream
+        response.end();
     }
 });

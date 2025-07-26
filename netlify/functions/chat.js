@@ -46,8 +46,9 @@ async function getProgressiveStreamResponse(model, prompt, clientIP) {
         
         let fullText = '';
         let chunkCount = 0;
+        let lastKeepAlive = Date.now();
         
-        // Process chunks as they come - no artificial timeouts
+        // Process chunks as they come - with keepalive to prevent timeout
         for await (const chunk of result.stream) {
             const elapsed = Date.now() - startTime;
             
@@ -55,6 +56,12 @@ async function getProgressiveStreamResponse(model, prompt, clientIP) {
             if (chunkText) {
                 fullText += chunkText;
                 chunkCount++;
+                
+                // Send keepalive log every 8 seconds to prevent Netlify timeout
+                if (Date.now() - lastKeepAlive > 8000) {
+                    console.log(`[${clientIP}] Progressive keepalive: ${chunkCount} chunks, ${fullText.length} chars, ${elapsed}ms`);
+                    lastKeepAlive = Date.now();
+                }
                 
                 // Log progress every 10 chunks
                 if (chunkCount % 10 === 0) {

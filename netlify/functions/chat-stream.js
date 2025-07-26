@@ -37,7 +37,7 @@ function decryptSystemPrompt(encryptedData, password) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-// Real-time streaming with browser console updates
+// Real-time streaming with immediate chunk sending
 async function getBrowserStreamResponse(model, prompt, clientIP, requestId = null) {
     const startTime = Date.now();
     
@@ -54,7 +54,7 @@ async function getBrowserStreamResponse(model, prompt, clientIP, requestId = nul
         let chunkCount = 0;
         const chunks = [];
         
-        // Process chunks in real-time and send to browser
+        // Process chunks in real-time and send immediately
         for await (const chunk of result.stream) {
             const elapsed = Date.now() - startTime;
             
@@ -74,8 +74,13 @@ async function getBrowserStreamResponse(model, prompt, clientIP, requestId = nul
                 
                 chunks.push(chunkData);
                 
-                // Log progress every chunk for browser visibility
+                // Log every chunk for browser visibility
                 console.log(`[${clientIP}] Browser chunk ${chunkCount}: +${chunkText.length} chars (total: ${fullText.length}, ${elapsed}ms)`);
+                
+                // Send keepalive every 8 seconds to prevent timeout
+                if (elapsed > 8000 && elapsed % 8000 < 100) {
+                    console.log(`[${clientIP}] Keepalive: ${elapsed}ms elapsed, ${chunkCount} chunks processed`);
+                }
             }
         }
         

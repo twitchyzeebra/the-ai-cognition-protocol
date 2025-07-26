@@ -277,13 +277,69 @@ document.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(aiMessageDiv);
         chatLog.scrollTop = chatLog.scrollHeight;
         
-        // Use browser streaming for real-time console updates
-        await sendStreamingMessage(prompt, aiMessageDiv);
+        const startTime = Date.now();
         
-        // Clean up
-        aiMessageDiv.classList.remove('streaming');
-        stopThinkingTimer();
-        loadingIndicator.classList.add('hidden');
+        try {
+            console.log('🚀 Starting progressive streaming chat request...');
+            
+            // Use progressive streaming by default (with keepalive)
+            const response = await fetch('/.netlify/functions/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
+            });
+            
+            const duration = Date.now() - startTime;
+            console.log(`📊 Progressive chat response time: ${duration}ms`);
+            
+            // Handle rate limiting
+            if (response.status === 429) {
+                const errorData = await response.json();
+                aiMessageDiv.innerHTML = formatAIResponse('Rate limit exceeded. Please wait before sending another message. (Maximum 4 messages per minute)');
+                aiMessageDiv.classList.remove('streaming');
+                return;
+            }
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // Handle progressive streaming response (default method)
+            if (data.streaming || data.progressive) {
+                // Apply formatting to the AI response
+                aiMessageDiv.innerHTML = formatAIResponse(data.text);
+                
+                // Add metadata about the response
+                const metaDiv = document.createElement('div');
+                metaDiv.className = 'response-meta';
+                let metaText = `Generated in ${(data.duration/1000).toFixed(1)}s • ${data.chunks} chunks • ${data.text.length} characters`;
+                
+                metaText += ' • 🚀 Progressive streaming';
+                metaDiv.style.color = '#4caf50';
+                
+                metaDiv.innerHTML = `<small>${metaText}</small>`;
+                aiMessageDiv.appendChild(metaDiv);
+            } else {
+                aiMessageDiv.innerHTML = formatAIResponse(data.text || data.response);
+            }
+            
+            console.log(`✅ Response complete: ${data.text ? data.text.length : 0} characters`);
+            
+        } catch (error) {
+            console.error('❌ Error fetching AI response:', error);
+            if (error.name === 'AbortError') {
+                aiMessageDiv.innerHTML = formatAIResponse('Request timed out. Please try again.');
+            } else {
+                aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong. Please try again.');
+            }
+        } finally {
+            // Clean up
+            aiMessageDiv.classList.remove('streaming');
+            stopThinkingTimer();
+            loadingIndicator.classList.add('hidden');
+        }
     }
 
     // Simulate typing effect

@@ -4,6 +4,16 @@ const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
 
+// Conditionally import @netlify/functions
+let stream;
+try {
+  const netlifyFunctions = require("@netlify/functions");
+  stream = netlifyFunctions.stream;
+} catch (e) {
+  // Fallback for local development
+  stream = (handler) => handler;
+}
+
 const API_KEY = process.env.GEMINI_API_KEY;
 
 // Decryption function
@@ -36,26 +46,26 @@ function decryptSystemPrompt(encryptedData, password) {
 
 // True streaming function using Node.js Readable stream
 async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream) {
+    const isProduction = !!process.env.NETLIFY;
+    let keepAliveInterval;
     try {
         const startTime = Date.now();
-        console.log(`[${clientIP}] Starting REAL-TIME streaming response...`);
+        console.log(`[${clientIP}] Starting REAL-TIME streaming response (Production: ${isProduction})...`);
+
+        // Set keep-alive pings only for the production environment
+        if (isProduction) {
+            keepAliveInterval = setInterval(() => {
+                readableStream.push(':keep-alive\n\n');
+            }, 5000); // Send a ping every 5 seconds
+        }
         
         const result = await model.generateContentStream(prompt);
-
-        let fullText = '';
-        let chunkCount = 0;
 
         for await (const chunk of result.stream) {
             const chunkText = chunk.text();
             if (chunkText) {
-                fullText += chunkText;
-                chunkCount++;
-
                 const eventData = {
                     text: chunkText,
-                    chunk: chunkCount,
-                    totalLength: fullText.length,
-                    elapsed: Date.now() - startTime
                 };
                 readableStream.push(`data: ${JSON.stringify(eventData)}\n\n`);
             }
@@ -64,12 +74,8 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream
         const finalEvent = {
             done: true,
             duration: Date.now() - startTime,
-            totalLength: fullText.length,
-            totalChunks: chunkCount
         };
         readableStream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
-
-        console.log(`[${clientIP}] Real-time streaming completed: ${Date.now() - startTime}ms`);
 
     } catch (error) {
         console.error(`[${clientIP}] Real-time streaming error:`, error.message);
@@ -79,6 +85,7 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream
         };
         readableStream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
     } finally {
+        if (keepAliveInterval) clearInterval(keepAliveInterval);
         readableStream.push(null); // End the stream
     }
 }
@@ -107,11 +114,13 @@ function checkRateLimit(clientIP) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-exports.handler = async (event, context) => {
-    // This is crucial for streaming in local development
-    if (context) {
+// Wrap the handler with the appropriate stream utility
+exports.handler = stream(async (event, context) => {
+    // For local development, ensure the connection doesn't close prematurely
+    if (context && !process.env.NETLIFY) {
         context.callbackWaitsForEmptyEventLoop = false;
     }
+
     const clientIP = event.headers['x-forwarded-for'] || 'unknown';
 
     if (event.httpMethod !== 'POST') {
@@ -127,7 +136,6 @@ exports.handler = async (event, context) => {
     }
 
     if (!API_KEY) {
-        console.error('GEMINI_API_KEY missing');
         return {
             statusCode: 500,
             body: JSON.stringify({ error: "Server configuration error." }),
@@ -166,11 +174,9 @@ exports.handler = async (event, context) => {
 
         const readableStream = new Readable({ read() {} });
         
-        // Immediately send a connection confirmation event
         readableStream.push(`data: ${JSON.stringify({ event: 'connection-established' })}\n\n`);
-        console.log(`[${clientIP}] Pushed connection-established event.`);
         
-        // Call the streaming function without awaiting it, allowing the handler to return immediately
+        // Call the streaming function without awaiting it
         getRealtimeStreamResponse(model, fullPrompt, clientIP, readableStream);
 
         return {
@@ -179,7 +185,6 @@ exports.handler = async (event, context) => {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
             },
             body: readableStream,
         };
@@ -192,4 +197,4 @@ exports.handler = async (event, context) => {
             headers: { 'Content-Type': 'application/json' }
         };
     }
-};
+});

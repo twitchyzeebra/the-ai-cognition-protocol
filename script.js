@@ -314,10 +314,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const requestBody = { 
                             prompt: prompt,
                             requestId: requestId,
-                            continueFrom: fullResponse.length > 500 ? fullResponse.slice(-500) : fullResponse
+                            continueFrom: fullResponse.length > 2000 ? 
+                                fullResponse.slice(-1500) + '...[CONTINUATION NEEDED]' : 
+                                fullResponse
                         };
                         
-                        aiMessageDiv.textContent = `Getting response part ${attemptCount}... (unlimited mode)`;
+                        aiMessageDiv.textContent = `Getting response part ${attemptCount}... (unlimited mode) - ${fullResponse.length} characters so far`;
                         
                         const unlimitedResponse = await fetch('/.netlify/functions/chat-unlimited', {
                             method: 'POST',
@@ -335,30 +337,40 @@ document.addEventListener('DOMContentLoaded', () => {
                         const unlimitedData = await unlimitedResponse.json();
                         console.log(`✅ Multi-part attempt ${attemptCount} successful!`);
                         
-                        // Append or set the response
+                        // Handle response accumulation properly
                         if (attemptCount === 1) {
+                            // First part - set the initial response
                             fullResponse = unlimitedData.response;
                             requestId = unlimitedData.requestId;
                         } else {
-                            // For continuation, append the new content
-                            fullResponse += '\n\n' + unlimitedData.response;
+                            // Continuation part - append the new content
+                            // Only append if this is actually new content
+                            if (unlimitedData.isContinuation && unlimitedData.response.trim()) {
+                                fullResponse += ' ' + unlimitedData.response.trim();
+                            } else if (!unlimitedData.isContinuation) {
+                                // If backend returned full response again, replace it
+                                fullResponse = unlimitedData.response;
+                            }
                         }
                         
-                        // Update display with current progress
+                        // Update display with accumulated progress
                         aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                        aiMessageDiv.scrollTop = aiMessageDiv.scrollHeight;
                         
                         // Log continuation check details
                         console.log(`📊 Part ${attemptCount} analysis:`, {
                             needsContinuation: unlimitedData.needsContinuation,
                             currentPartLength: unlimitedData.length,
-                            totalLength: fullResponse.length,
-                            duration: unlimitedData.duration
+                            totalAccumulatedLength: fullResponse.length,
+                            duration: unlimitedData.duration,
+                            isContinuation: unlimitedData.isContinuation
                         });
                         
                         // Check if we need to continue - improved logic
                         const shouldContinue = unlimitedData.needsContinuation && 
-                                             unlimitedData.length > 300 && 
-                                             attemptCount < maxAttempts;
+                                             unlimitedData.length > 200 && 
+                                             attemptCount < maxAttempts &&
+                                             fullResponse.length > 800; // Only continue if we have substantial content
                         
                         if (!shouldContinue) {
                             console.log('🎉 Multi-part response complete!');

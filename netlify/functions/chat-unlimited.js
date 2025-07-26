@@ -197,7 +197,7 @@ exports.handler = async (event) => {
         if (continueFrom) {
             // This is a continuation request - preserve context better
             const lastSentence = continueFrom.split(/[.!?]+/).pop() || '';
-            fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\n\nPrevious response (continue from this point): ${continueFrom}\n\nAI: [Continue seamlessly from where you left off${lastSentence ? `, picking up after: "${lastSentence.trim()}"` : ''}. Do not repeat what was already said. Maintain the same tone, style, and depth of analysis.]`;
+            fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\n\nPrevious response (continue from this point): ${continueFrom}\n\nAI: [Continue seamlessly from where you left off${lastSentence ? `, picking up after: "${lastSentence.trim()}"` : ''}. Do not repeat what was already said. Maintain the same tone, style, and depth of analysis. Only provide the NEW continuation content.]`;
         } else {
             // This is a new request
             fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\nAI:`;
@@ -211,6 +211,7 @@ exports.handler = async (event) => {
                 response: result.text,
                 streaming: true,
                 multiPart: true,
+                isContinuation: !!continueFrom,
                 duration: result.duration,
                 chunks: result.chunks,
                 length: result.length,

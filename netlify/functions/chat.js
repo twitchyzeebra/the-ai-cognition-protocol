@@ -181,6 +181,7 @@ exports.handler = async (event) => {
                 'Access-Control-Allow-Origin': '*',
             },
             isBase64Encoded: false,
+            isStreaming: true, // Tell Netlify this is a streaming response
             body: stream,
         };
 

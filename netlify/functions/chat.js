@@ -18,9 +18,34 @@ function loadSystemPrompt() {
         const encryptedPath = path.join(__dirname, '../../system-prompt-encrypted.json');
         if (fs.existsSync(encryptedPath)) {
             const encryptedData = JSON.parse(fs.readFileSync(encryptedPath, 'utf8'));
-            // For now, return a default prompt if decryption fails
-            return "You are a helpful AI assistant.";
+            
+            // Get decryption key from environment
+            const encryptionKey = process.env.SYSTEM_PROMPT_KEY;
+            if (!encryptionKey) {
+                console.log("SYSTEM_PROMPT_KEY environment variable not found, using fallback");
+                return "You are a helpful AI assistant.";
+            }
+            
+            // Validate key format (should be 64-character hex string)
+            if (!/^[a-fA-F0-9]{64}$/.test(encryptionKey)) {
+                console.log("Invalid SYSTEM_PROMPT_KEY format, using fallback");
+                return "You are a helpful AI assistant.";
+            }
+            
+            // Decrypt the system prompt using the same method as encrypt-prompt.js
+            const key = Buffer.from(encryptionKey, 'hex');
+            const iv = Buffer.from(encryptedData.iv, 'hex');
+            const authTag = Buffer.from(encryptedData.authTag, 'hex');
+            const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+            decipher.setAuthTag(authTag);
+            
+            let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+            decrypted += decipher.final('utf8');
+            
+            console.log("System prompt successfully loaded and decrypted");
+            return decrypted;
         }
+        console.log("Encrypted system prompt file not found, using fallback");
         return "You are a helpful AI assistant.";
     } catch (error) {
         console.error('System prompt loading failed:', error);

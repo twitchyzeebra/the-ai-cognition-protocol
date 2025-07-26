@@ -85,6 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let thinkingInterval = null;
     let thinkingStartTime = null;
     let selectedChapter = null;
+    let conversationHistory = []; // Add this line to store the history
 
     // Sidebar functionality
     function toggleSidebar() {
@@ -196,13 +197,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle real-time streaming with Server-Sent Events (SSE)
     async function sendStreamingMessage(prompt, aiMessageDiv) {
+        let fullResponse = ''; // Declaration moved here for correct scope
         try {
             console.log('🚀 Starting real-time SSE chat request...');
             
             const response = await fetch('/.netlify/functions/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt })
+                body: JSON.stringify({ prompt, history: conversationHistory }) // Send history with the prompt
             });
 
             if (!response.ok) {
@@ -217,7 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let fullResponse = '';
             let buffer = '';
 
             while (true) {
@@ -263,6 +264,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('❌ Real-time streaming error:', error);
             aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
+        } finally {
+            // Add the AI's complete response to the history
+            if (fullResponse) {
+                conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
+            }
         }
     }
 
@@ -270,7 +276,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e) e.preventDefault();
         const prompt = chatInput.value.trim();
         if (!prompt) return;
+
+        // Add user message to chat log and history
         addMessage(prompt, 'user-message');
+        conversationHistory.push({ role: "user", parts: [{ text: prompt }] });
+
         chatInput.value = '';
         
         // Start thinking timer and show loading

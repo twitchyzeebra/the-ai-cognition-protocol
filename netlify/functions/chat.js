@@ -67,6 +67,25 @@ async function streamAIResponse(prompt, history, readableStream) {
     }
 }
 
+// Add input validation and sanitization
+function validateAndSanitizeInput(prompt, history) {
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+        throw new Error('Invalid prompt: Prompt must be a non-empty string.');
+    }
+
+    if (!Array.isArray(history)) {
+        throw new Error('Invalid history: History must be an array.');
+    }
+
+    // Limit history length to prevent abuse
+    const maxHistoryLength = 10;
+    if (history.length > maxHistoryLength) {
+        history = history.slice(-maxHistoryLength);
+    }
+
+    return { prompt: prompt.trim(), history };
+}
+
 // The main handler, wrapped with the Netlify stream utility
 exports.handler = stream(async (event, context) => {
     // For local development, this is crucial for streaming to work
@@ -90,45 +109,29 @@ exports.handler = stream(async (event, context) => {
     }
 
     try {
-        // Parse the prompt and history from the request body
+        // Parse and validate the prompt and history from the request body
         const body = JSON.parse(event.body);
-        const { prompt, history } = body;
-
-        if (!prompt) {
-            return { 
-                statusCode: 400, 
-                body: JSON.stringify({ error: 'Bad Request: Prompt is required.' }),
-            };
-        }
-
-        // History is already a parsed object from the body, no need for decode/parse.
+        const { prompt, history } = validateAndSanitizeInput(body.prompt, body.history);
 
         const readableStream = new Readable({ read() {} });
-        
+
         // Start the AI stream in the background. The handler returns the stream immediately.
-        streamAIResponse(prompt, history || [], readableStream);
+        streamAIResponse(prompt, history, readableStream);
 
-        // Modify the response to buffer the stream's data
-        const chunks = [];
-        readableStream.on('data', (chunk) => chunks.push(chunk));
-        readableStream.on('end', () => {
-            const responseBody = Buffer.concat(chunks).toString('utf-8');
-            return {
-                statusCode: 200,
-                headers: {
-                    'Content-Type': 'text/event-stream',
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'keep-alive',
-                },
-                body: responseBody,
-            };
-        });
-
+        return {
+            statusCode: 200,
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            },
+            body: readableStream,
+        };
     } catch (error) {
         console.error("Handler error:", error);
         return {
-            statusCode: 500,
-            body: JSON.stringify({ error: 'Internal Server Error' }),
+            statusCode: 400,
+            body: JSON.stringify({ error: error.message }),
         };
     }
 });

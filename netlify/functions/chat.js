@@ -4,13 +4,15 @@ const fs = require('fs');
 const path = require('path');
 const { Readable } = require('stream');
 
-// Conditionally import @netlify/functions
+// Conditionally import @netlify/functions for production environment
 let stream;
 try {
   const netlifyFunctions = require("@netlify/functions");
   stream = netlifyFunctions.stream;
+  console.log("Successfully imported Netlify stream handler.");
 } catch (e) {
   // Fallback for local development
+  console.log("Using fallback stream handler for local development.");
   stream = (handler) => handler;
 }
 
@@ -44,35 +46,18 @@ function decryptSystemPrompt(encryptedData, password) {
     }
 }
 
-// True streaming function using Node.js Readable stream
-async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream) {
-    const isProduction = !!process.env.NETLIFY;
-    let keepAliveInterval;
+// This function runs the AI stream and pushes data to the client
+async function streamAIResponse(model, prompt, clientIP, readableStream) {
     try {
         const startTime = Date.now();
-        console.log(`[${clientIP}] Starting REAL-TIME streaming response (Production: ${isProduction})...`);
-
-        // Set keep-alive pings only for the production environment
-        if (isProduction) {
-            // Send an immediate keep-alive ping to prevent gateway timeout while waiting for the model
-            readableStream.push(':keep-alive\n\n');
-            console.log(`[${clientIP}] Sent immediate keep-alive ping before model generation.`);
-
-            keepAliveInterval = setInterval(() => {
-                readableStream.push(':keep-alive\n\n');
-                console.log(`[${clientIP}] Sent periodic keep-alive ping.`);
-            }, 5000); // Send a ping every 5 seconds
-        }
+        console.log(`[${clientIP}] Starting AI content stream...`);
         
         const result = await model.generateContentStream(prompt);
 
         for await (const chunk of result.stream) {
             const chunkText = chunk.text();
             if (chunkText) {
-                const eventData = {
-                    text: chunkText,
-                };
-                readableStream.push(`data: ${JSON.stringify(eventData)}\n\n`);
+                readableStream.push(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
             }
         }
 
@@ -81,16 +66,12 @@ async function getRealtimeStreamResponse(model, prompt, clientIP, readableStream
             duration: Date.now() - startTime,
         };
         readableStream.push(`data: ${JSON.stringify(finalEvent)}\n\n`);
+        console.log(`[${clientIP}] AI stream finished.`);
 
     } catch (error) {
-        console.error(`[${clientIP}] Real-time streaming error:`, error.message);
-        const errorEvent = {
-            error: 'Error during streaming.',
-            message: error.message
-        };
-        readableStream.push(`data: ${JSON.stringify(errorEvent)}\n\n`);
+        console.error(`[${clientIP}] AI streaming error:`, error.message);
+        readableStream.push(`data: ${JSON.stringify({ error: 'Error during streaming.' })}\n\n`);
     } finally {
-        if (keepAliveInterval) clearInterval(keepAliveInterval);
         readableStream.push(null); // End the stream
     }
 }
@@ -119,9 +100,9 @@ function checkRateLimit(clientIP) {
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
-// Wrap the handler with the appropriate stream utility
+// The main handler, wrapped with the Netlify stream utility for production
 exports.handler = stream(async (event, context) => {
-    // For local development, ensure the connection doesn't close prematurely
+    // For local development, this is crucial for streaming to work
     if (context && !process.env.NETLIFY) {
         context.callbackWaitsForEmptyEventLoop = false;
     }
@@ -179,17 +160,9 @@ exports.handler = stream(async (event, context) => {
 
         const readableStream = new Readable({ read() {} });
         
-        readableStream.push(`data: ${JSON.stringify({ event: 'connection-established' })}\n\n`);
-        
-        // For long prompts in production, send extra pings immediately
-        if (!!process.env.NETLIFY && userPrompt.length > 100) {
-            console.log(`[${clientIP}] Long prompt detected, sending extra keep-alive pings.`);
-            readableStream.push(':keep-alive\n\n');
-            readableStream.push(':keep-alive\n\n');
-        }
-
-        // Call the streaming function without awaiting it
-        getRealtimeStreamResponse(model, fullPrompt, clientIP, readableStream);
+        // Start the AI stream in the background. 
+        // The handler returns the readableStream immediately.
+        streamAIResponse(model, fullPrompt, clientIP, readableStream);
 
         return {
             statusCode: 200,

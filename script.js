@@ -197,57 +197,72 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle real-time streaming with Server-Sent Events (SSE)
     async function sendStreamingMessage(prompt, aiMessageDiv) {
         try {
-            console.log('🚀 Starting chat request...');
+            console.log('🚀 Starting real-time SSE chat request...');
             
-            // Step 1: Request to start the AI generation
-            const requestResponse = await fetch('/.netlify/functions/chat-request', {
+            const response = await fetch('/.netlify/functions/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt })
             });
 
-            if (!requestResponse.ok) {
-                const errorText = await requestResponse.text();
-                console.error('❌ Initial request failed:', errorText);
-                throw new Error(`Initial request failed: ${requestResponse.status}`);
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Server Error Response:', errorText);
+                throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
             }
 
-            const { requestId } = await requestResponse.json();
-            console.log(`✅ Request accepted with ID: ${requestId}`);
+            if (!response.body) {
+                throw new Error('Response body is missing');
+            }
 
-            // Step 2: Poll the streaming endpoint
-            const eventSource = new EventSource(`/.netlify/functions/chat-poll?requestId=${requestId}`);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
             let fullResponse = '';
+            let buffer = '';
 
-            eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-
-                if (data.done) {
-                    eventSource.close();
-                    console.log('✅ Stream finished.');
-                    const metaDiv = document.createElement('div');
-                    metaDiv.className = 'response-meta';
-                    metaDiv.innerHTML = `<small>Generated via polling • 🌊 Real-time stream</small>`;
-                    aiMessageDiv.appendChild(metaDiv);
-                    return;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log('✅ SSE stream finished.');
+                    break;
                 }
 
-                if (data.text) {
-                    fullResponse += data.text;
-                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-                    chatLog.scrollTop = chatLog.scrollHeight;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop(); // Keep the last, possibly incomplete line
+
+                for (const line of lines) {
+                    if (line.startsWith('data:')) {
+                        const jsonString = line.substring(5).trim();
+                        if (jsonString) {
+                            try {
+                                const data = JSON.parse(jsonString);
+
+                                if (data.done) {
+                                    const metaDiv = document.createElement('div');
+                                    metaDiv.className = 'response-meta';
+                                    const metaText = `Generated in ${(data.duration / 1000).toFixed(1)}s • 🌊 Real-time stream`;
+                                    metaDiv.style.color = '#2196f3';
+                                    metaDiv.innerHTML = `<small>${metaText}</small>`;
+                                    aiMessageDiv.appendChild(metaDiv);
+                                    return;
+                                }
+
+                                if (data.text) {
+                                    fullResponse += data.text;
+                                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                                    chatLog.scrollTop = chatLog.scrollHeight;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e, 'Raw data:', jsonString);
+                            }
+                        }
+                    }
                 }
-            };
-
-            eventSource.onerror = (err) => {
-                console.error('❌ EventSource failed:', err);
-                eventSource.close();
-                aiMessageDiv.innerHTML = formatAIResponse('Sorry, the connection was lost. Please try again.');
-            };
-
+            }
         } catch (error) {
             console.error('❌ Real-time streaming error:', error);
-            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong. Please try again.');
+            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
         }
     }
 

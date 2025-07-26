@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatLog = document.getElementById('chat-log');
     const loadingIndicator = document.getElementById('loading-indicator');
     const thinkingTimer = document.getElementById('thinking-timer');
+    let conversationHistory = [];
     
     // Sidebar elements
     const sidebar = document.getElementById('sidebar');
@@ -205,7 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 prompt, 
-                history: conversationHistory.slice(0, -1) // Send history without the current message
+                history: conversationHistory // Send the conversation history
             })
         });
 

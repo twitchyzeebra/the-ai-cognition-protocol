@@ -144,8 +144,9 @@ exports.handler = stream(async (event, context) => {
                 }
                 readableStream.push('data: {"type":"done"}\n\n');
             } catch (streamError) {
-                console.error("Stream error:", streamError);
-                readableStream.push(`data: ${JSON.stringify({type:"error",message:streamError.message})}\n\n`);
+                console.error("Error during stream generation:", streamError);
+                // An error during streaming is logged. The stream is then closed,
+                // and the client will handle the unexpected end of the stream.
             } finally {
                 // Signal the end of the stream
                 readableStream.push(null);
@@ -166,16 +167,21 @@ exports.handler = stream(async (event, context) => {
 
     } catch (error) {
         console.error("Handler error:", error);
-        // For errors before streaming, return a standard JSON error
+        // If an error occurs before streaming, return a valid stream with an error message.
+        const { Readable } = require('stream');
+        const readableStream = new Readable({ read() {} });
+        readableStream.push(`data: ${JSON.stringify({ type: "error", message: 'Internal Server Error: ' + error.message })}\n\n`);
+        readableStream.push(null); // End the stream
+
         return {
-            statusCode: 500,
+            statusCode: 200, // Still 200, but the stream content indicates an error
             headers: {
                 'Access-Control-Allow-Origin': '*',
-                'Content-Type': 'application/json',
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
             },
-            body: JSON.stringify({ 
-                error: 'Internal Server Error: ' + error.message 
-            }),
+            body: readableStream,
         };
     }
 });

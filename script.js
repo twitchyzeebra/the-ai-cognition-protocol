@@ -196,61 +196,90 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Handle real-time streaming with Server-Sent Events (SSE)
-    async function sendStreamingMessage(prompt, aiMessageDiv) {
-    let fullResponse = '';
-    try {
-        console.log('🚀 Starting chat request...');
-        
-        const response = await fetch('/.netlify/functions/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                prompt: prompt
-            })
-        });
+    function sendStreamingMessage(prompt, aiMessageDiv) {
+        let fullResponse = '';
+        aiMessageDiv.textContent = ''; // Clear "AI is thinking..."
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Server Error Response:', errorText);
-            throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
-        }
+        // Encode parameters for the GET request
+        const encodedPrompt = encodeURIComponent(prompt);
+        const encodedHistory = encodeURIComponent(JSON.stringify(conversationHistory));
+        
+        // Use EventSource for a persistent connection
+        const eventSource = new EventSource(`/.netlify/functions/chat?prompt=${encodedPrompt}&history=${encodedHistory}`);
 
-        const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(data.error);
-        }
+        eventSource.onopen = () => {
+            console.log('✅ SSE connection established.');
+        };
 
-        // Update the message with the response
-        fullResponse = data.text || '';
-        aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-        
-        // Add response metadata
-        const metaDiv = document.createElement('div');
-        metaDiv.className = 'response-meta';
-        const metaText = `Generated in ${(data.duration / 1000).toFixed(1)}s • ${data.model || 'Gemini'}`;
-        metaDiv.style.color = '#2196f3';
-        metaDiv.innerHTML = `<small>${metaText}</small>`;
-        aiMessageDiv.appendChild(metaDiv);
-        
-        console.log('✅ Chat request completed successfully');
-        
-    } catch (error) {
-        console.error('❌ Chat request error:', error);
-        aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the connection. Please try again.');
-    } finally {
-        // Add the AI's complete response to the history
-        if (fullResponse) {
-            conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
-        }
+        eventSource.onmessage = (event) => {
+            // The server will send a special message when it's done
+            if (event.data === '[DONE]') {
+                eventSource.close();
+                
+                // Add the final response to history
+                if (fullResponse) {
+                    conversationHistory.push({ role: "model", parts: [{ text: fullResponse }] });
+                }
+                
+                // Clean up UI
+                aiMessageDiv.classList.remove('streaming');
+                stopThinkingTimer();
+                loadingIndicator.classList.add('hidden');
+                
+                // Add metadata
+                const metaDiv = document.createElement('div');
+                metaDiv.className = 'response-meta';
+                const elapsed = Math.floor((Date.now() - thinkingStartTime) / 1000);
+                const metaText = `Generated in ${elapsed}s • 🌊 Real-time stream`;
+                metaDiv.style.color = '#2196f3';
+                metaDiv.innerHTML = `<small>${metaText}</small>`;
+                aiMessageDiv.appendChild(metaDiv);
+                
+                return;
+            }
+
+            try {
+                const data = JSON.parse(event.data);
+                
+                if (data.error) {
+                    console.error('❌ Server-side error:', data.error);
+                    aiMessageDiv.innerHTML = formatAIResponse(`Sorry, an error occurred: ${data.error}`);
+                    eventSource.close();
+                    return;
+                }
+
+                if (data.text) {
+                    fullResponse += data.text;
+                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                    chatLog.scrollTop = chatLog.scrollHeight;
+                }
+            } catch (e) {
+                console.error('Error parsing SSE data:', e, 'Raw data:', event.data);
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error('❌ EventSource failed:', err);
+            aiMessageDiv.innerHTML = formatAIResponse('Sorry, the connection to the server was lost. Please try again.');
+            
+            // Clean up UI
+            stopThinkingTimer();
+            loadingIndicator.classList.add('hidden');
+            aiMessageDiv.classList.remove('streaming');
+            
+            eventSource.close();
+        };
     }
-}
 
     async function sendMessage(e) {
         if (e) e.preventDefault();
         const prompt = chatInput.value.trim();
         if (!prompt) return;
+
+        // Add user message to chat log and history
         addMessage(prompt, 'user-message');
+        conversationHistory.push({ role: "user", parts: [{ text: prompt }] });
+
         chatInput.value = '';
         
         // Start thinking timer and show loading
@@ -264,18 +293,9 @@ document.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(aiMessageDiv);
         chatLog.scrollTop = chatLog.scrollHeight;
         
-        try {
-            // Use the new real-time streaming function
-            await sendStreamingMessage(prompt, aiMessageDiv);
-        } catch (error) {
-            console.error('❌ Top-level sendMessage error:', error);
-            aiMessageDiv.innerHTML = formatAIResponse('An unexpected error occurred. Please check the console and try again.');
-        } finally {
-            // Clean up after streaming is complete or has failed
-            aiMessageDiv.classList.remove('streaming');
-            stopThinkingTimer();
-            loadingIndicator.classList.add('hidden');
-        }
+        // Call the new streaming function. Note: No await, no try/catch here.
+        // The EventSource handles its own lifecycle and errors.
+        sendStreamingMessage(prompt, aiMessageDiv);
     }
 
     // Simulate typing effect

@@ -1,160 +1,110 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+const { Readable } = require('stream');
+
+// Conditionally import @netlify/functions for production environment
+let stream;
+try {
+  const netlifyFunctions = require("@netlify/functions");
+  stream = netlifyFunctions.stream;
+} catch (e) {
+  // Fallback for local development
+  stream = (handler) => handler;
+}
 
 const API_KEY = process.env.GEMINI_API_KEY;
-
 if (!API_KEY) {
+    // This will cause the function to fail gracefully if the key is missing
     throw new Error("GEMINI_API_KEY environment variable not set.");
 }
-
-// Decryption function for system prompt
-function getKey(keyHex) {
-    if (!/^[a-fA-F0-9]{64}$/.test(keyHex)) {
-        throw new Error('Encryption key must be a 64-character hex string');
-    }
-    return Buffer.from(keyHex, 'hex');
-}
-
-function decryptSystemPrompt(encryptedData, password) {
-    try {
-        const algorithm = 'aes-256-gcm';
-        const key = getKey(password);
-        const iv = Buffer.from(encryptedData.iv, 'hex');
-        const authTag = Buffer.from(encryptedData.authTag, 'hex');
-        
-        const decipher = crypto.createDecipheriv(algorithm, key, iv);
-        decipher.setAuthTag(authTag);
-        
-        let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-        
-        return decrypted;
-    } catch (error) {
-        console.error('Decryption failed:', error.message);
-        return null;
-    }
-}
-
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-exports.handler = async (event) => {
-    const startTime = Date.now();
-    
-    // CORS headers
-    const headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Content-Type': 'application/json'
-    };
-    
-    if (event.httpMethod === 'OPTIONS') {
-        return {
-            statusCode: 200,
-            headers,
-            body: ''
-        };
-    }
-    
-    if (event.httpMethod !== 'POST') {
-        return {
-            statusCode: 405,
-            headers,
-            body: JSON.stringify({ error: 'Method not allowed' })
-        };
-    }
-    
+// This function handles the core logic of streaming the AI response
+async function streamAIResponse(prompt, history, readableStream) {
     try {
-        const { prompt, history } = JSON.parse(event.body || '{}');
-        const clientIP = event.headers['x-forwarded-for'] || 'unknown';
-        
-        if (!prompt || prompt.trim().length === 0) {
-            return {
-                statusCode: 400,
-                headers,
-                body: JSON.stringify({ error: 'Prompt is required' })
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        const chat = model.startChat({
+            history: history || [],
+        });
+        const result = await chat.sendMessageStream(prompt);
+
+        for await (const chunk of result.stream) {
+            const chunkText = chunk.text();
+            if (chunkText) {
+                // SSE format: data: { ... } \n\n
+                readableStream.push(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+            }
+        }
+        // Signal the end of the stream to the client
+        readableStream.push('data: [DONE]\n\n');
+
+    } catch (error) {
+        console.error("AI streaming error:", error);
+        // Send a structured error message to the client
+        readableStream.push(`data: ${JSON.stringify({ error: "An error occurred while communicating with the AI." })}\n\n`);
+    } finally {
+        // Always close the stream
+        readableStream.push(null);
+    }
+}
+
+// The main handler, wrapped with the Netlify stream utility
+exports.handler = stream(async (event, context) => {
+    // For local development, this is crucial for streaming to work
+    if (context && !process.env.NETLIFY) {
+        context.callbackWaitsForEmptyEventLoop = false;
+    }
+
+    // EventSource sends GET requests, so we must handle them.
+    if (event.httpMethod !== 'GET') {
+        return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    try {
+        // Parameters are now in the query string
+        const { prompt, history: historyStr } = event.queryStringParameters;
+
+        if (!prompt) {
+            return { 
+                statusCode: 400, 
+                body: JSON.stringify({ error: 'Bad Request: Prompt is required.' }),
             };
         }
-        
-        console.log(`[${clientIP}] Chat request: "${prompt.substring(0, 100)}..."`);
-        
-        // Load encrypted system prompt
-        let SECRET_SYSTEM_PROMPT = "You are a helpful AI assistant.";
-        
-        try {
-            const encryptedFilePath = path.join(__dirname, '../../system-prompt-encrypted.json');
-            
-            if (fs.existsSync(encryptedFilePath)) {
-                const encryptedFile = fs.readFileSync(encryptedFilePath, 'utf8');
-                const encryptedData = JSON.parse(encryptedFile);
-                
-                if (encryptedData?.data) {
-                    const encryptionKey = process.env.SYSTEM_PROMPT_KEY;
-                    if (encryptionKey) {
-                        const decrypted = decryptSystemPrompt(encryptedData.data, encryptionKey);
-                        if (decrypted) {
-                            SECRET_SYSTEM_PROMPT = decrypted;
-                            console.log('✅ System prompt decrypted successfully');
-                        }
-                    } else {
-                        console.warn('⚠️ SYSTEM_PROMPT_KEY not found in environment');
-                    }
-                }
-            } else {
-                console.warn('⚠️ Encrypted system prompt file not found');
+
+        let history = [];
+        if (historyStr) {
+            try {
+                // Decode and parse the history from the query string
+                history = JSON.parse(decodeURIComponent(historyStr));
+            } catch (e) {
+                console.error("Failed to parse history:", e);
+                // Return a clear error if history is malformed
+                return { 
+                    statusCode: 400, 
+                    body: JSON.stringify({ error: 'Bad Request: Invalid history format.' }),
+                };
             }
-        } catch (error) {
-            console.warn('⚠️ Could not load encrypted system prompt:', error.message);
         }
+
+        const readableStream = new Readable({ read() {} });
         
-        // Initialize model
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-pro",
-            generationConfig: {
-                maxOutputTokens: 8192,
-                temperature: 0.7,
-            }
-        });
-        
-        // Create full prompt with system instructions
-        const fullPrompt = `${SECRET_SYSTEM_PROMPT}\n\nUser: ${prompt}\nAI:`;
-        
-        console.log(`[${clientIP}] Starting AI generation...`);
-        
-        // Generate response
-        const result = await model.generateContent(fullPrompt);
-        const response = result.response;
-        const text = response.text();
-        
-        const duration = Date.now() - startTime;
-        console.log(`[${clientIP}] Generation completed in ${duration}ms, ${text.length} chars`);
-        
+        // Start the AI stream in the background. The handler returns the stream immediately.
+        streamAIResponse(decodeURIComponent(prompt), history, readableStream);
+
         return {
             statusCode: 200,
-            headers,
-            body: JSON.stringify({
-                text: text,
-                duration: duration,
-                model: "gemini-2.5-pro",
-                length: text.length,
-                success: true
-            })
+            headers: {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+            },
+            body: readableStream,
         };
-        
+
     } catch (error) {
-        const duration = Date.now() - startTime;
-        console.error(`Chat error after ${duration}ms:`, error.message);
-        
+        console.error("Handler error:", error);
         return {
             statusCode: 500,
-            headers,
-            body: JSON.stringify({
-                error: 'AI generation failed',
-                duration: duration,
-                message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-            })
+            body: JSON.stringify({ error: 'Internal Server Error' }),
         };
     }
-};
+});

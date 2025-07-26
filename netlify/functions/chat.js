@@ -123,26 +123,39 @@ exports.handler = stream(async (event, response) => {
         }
 
         const chat = model.startChat({ history: fullHistory });
-        const result = await chat.sendMessageStream(prompt);
-
-        // Write chunks directly to the response stream
-        response.write('data: {"type":"start"}\n\n');
         
-        for await (const chunk of result.stream) {
-            const chunkText = chunk.text();
-            if (chunkText) {
-                response.write(`data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`);
+        // Use a try...catch...finally block to ensure the stream is always closed
+        try {
+            const result = await chat.sendMessageStream(prompt);
+            
+            // Write chunks directly to the response stream
+            response.write('data: {"type":"start"}\n\n');
+            
+            for await (const chunk of result.stream) {
+                const chunkText = chunk.text();
+                if (chunkText) {
+                    response.write(`data: ${JSON.stringify({type:"chunk",text:chunkText})}\n\n`);
+                }
             }
+            
+            response.write('data: {"type":"done"}\n\n');
+            console.log("Response complete");
+
+        } catch (streamError) {
+            console.error("Stream error:", streamError);
+            response.write(`data: ${JSON.stringify({type:"error",message:streamError.message})}\n\n`);
+        } finally {
+            // Always end the stream
+            response.end();
         }
-        
-        response.write('data: {"type":"done"}\n\n');
-        console.log("Response complete");
 
     } catch (error) {
         console.error("Handler error:", error);
-        response.write(`data: ${JSON.stringify({type:"error",message:error.message})}\n\n`);
-    } finally {
-        // End the stream
-        response.end();
+        // If the main try block fails, we might not have a stream to write to,
+        // so we set a status code and end the response.
+        if (!response.writableEnded) {
+            response.statusCode = 500;
+            response.end(JSON.stringify({ error: 'Internal Server Error: ' + error.message }));
+        }
     }
 });

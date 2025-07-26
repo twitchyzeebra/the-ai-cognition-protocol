@@ -29,16 +29,15 @@ async function streamAIResponse(prompt, history, readableStream) {
         for await (const chunk of result.stream) {
             const chunkText = chunk.text();
             if (chunkText) {
-                // Format as a Server-Sent Event
                 readableStream.push(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
             }
         }
-        // End the stream on success
+        // Explicitly end the stream on success
         readableStream.push(null);
     } catch (error) {
         console.error("AI streaming error:", error);
         readableStream.push(`data: ${JSON.stringify({ error: "Error during streaming." })}\n\n`);
-        // End the stream on error
+        // Explicitly end the stream on error
         readableStream.push(null);
     }
 }
@@ -66,8 +65,13 @@ exports.handler = stream(async (event, context) => {
 
         const readableStream = new Readable({ read() {} });
         
-        // Start the AI stream in the background. The handler returns the stream immediately.
-        streamAIResponse(prompt, history, readableStream);
+        // Start the AI stream in the background, with an added catch for robustness
+        streamAIResponse(prompt, history, readableStream).catch(err => {
+            console.error("Unhandled streamAIResponse error:", err);
+            if (!readableStream.destroyed) {
+                readableStream.push(null); // Ensure stream is closed on unexpected error
+            }
+        });
 
         return {
             statusCode: 200,

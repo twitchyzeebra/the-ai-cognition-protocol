@@ -194,92 +194,75 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`(.+?)`/g, '<code>$1</code>');
     }
 
-    // Handle smart chat with automatic continuation to prevent timeouts
-    async function sendSmartMessage(prompt, aiMessageDiv) {
-        let fullResponse = '';
-        let requestCount = 0;
-        let lastResponse = '';
-        
+    // Handle real-time streaming with Server-Sent Events (SSE)
+    async function sendStreamingMessage(prompt, aiMessageDiv) {
         try {
+            console.log('🚀 Starting real-time SSE chat request...');
+            
+            const response = await fetch('/.netlify/functions/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
+            });
+
+            if (!response.body) {
+                throw new Error('Response body is missing');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullResponse = '';
+            let buffer = '';
+
             while (true) {
-                requestCount++;
-                console.log(`� Smart chat request #${requestCount} for: "${prompt.substring(0, 50)}..."`);
-                
-                const isFirstRequest = requestCount === 1;
-                const requestData = isFirstRequest 
-                    ? { prompt } 
-                    : { prompt, continueFrom: lastResponse };
-                
-                const endpoint = isFirstRequest 
-                    ? '/.netlify/functions/chat'
-                    : '/.netlify/functions/chat-unlimited';
-                
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestData)
-                });
-                
-                if (response.status === 429) {
-                    const errorData = await response.json();
-                    aiMessageDiv.innerHTML = formatAIResponse('Rate limit exceeded. Please wait before sending another message.');
-                    return;
-                }
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                const responseText = data.response || data.text || '';
-                
-                if (isFirstRequest) {
-                    fullResponse = responseText;
-                } else {
-                    fullResponse += responseText;
-                }
-                
-                lastResponse = responseText;
-                
-                // Update display with accumulated response
-                aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
-                chatLog.scrollTop = chatLog.scrollHeight;
-                
-                // Log progress
-                console.log(`📊 Request #${requestCount}: +${responseText.length} chars (total: ${fullResponse.length}, ${data.duration}ms)`);
-                
-                // Check if we need to continue (partial response detected)
-                const needsContinuation = data.needsContinuation || 
-                    (data.isPartial && responseText.length > 0) ||
-                    (data.duration > 18000 && responseText.length < 1000 && 
-                     (responseText.toLowerCase().includes('sorry') || responseText.toLowerCase().includes('error')));
-                
-                if (!needsContinuation || requestCount >= 5) {
-                    // Add final metadata
-                    const metaDiv = document.createElement('div');
-                    metaDiv.className = 'response-meta';
-                    const totalChunks = data.chunks || 'unknown';
-                    const metaText = `Generated in ${requestCount} parts • ${totalChunks} chunks • ${fullResponse.length} characters • ⚡ Smart continuation`;
-                    metaDiv.style.color = '#ff9800';
-                    metaDiv.innerHTML = `<small>${metaText}</small>`;
-                    aiMessageDiv.appendChild(metaDiv);
-                    
-                    console.log(`✅ Smart chat complete: ${requestCount} requests, ${fullResponse.length} total chars`);
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log('✅ SSE stream finished.');
                     break;
                 }
-                
-                // Brief pause before continuation
-                console.log(`🔄 Continuing response (part ${requestCount + 1})...`);
-                await new Promise(resolve => setTimeout(resolve, 500));
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop(); // Keep the last, possibly incomplete line
+
+                for (const line of lines) {
+                    if (line.startsWith(':keep-alive')) {
+                        console.log('❤️ Received keep-alive ping.');
+                        continue;
+                    }
+
+                    if (line.startsWith('data:')) {
+                        const jsonString = line.substring(5).trim();
+                        if (jsonString) {
+                            try {
+                                const data = JSON.parse(jsonString);
+
+                                if (data.done) {
+                                    // Add final metadata
+                                    const metaDiv = document.createElement('div');
+                                    metaDiv.className = 'response-meta';
+                                    const metaText = `Generated in ${(data.duration / 1000).toFixed(1)}s • ${data.totalChunks} chunks • ${data.totalLength} characters • 🌊 Real-time stream`;
+                                    metaDiv.style.color = '#2196f3';
+                                    metaDiv.innerHTML = `<small>${metaText}</small>`;
+                                    aiMessageDiv.appendChild(metaDiv);
+                                    return; // End processing
+                                }
+
+                                if (data.text) {
+                                    fullResponse += data.text;
+                                    aiMessageDiv.innerHTML = formatAIResponse(fullResponse);
+                                    chatLog.scrollTop = chatLog.scrollHeight;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e, 'Raw data:', jsonString);
+                            }
+                        }
+                    }
+                }
             }
-            
         } catch (error) {
-            console.error('❌ Smart chat error:', error);
-            if (fullResponse.length > 0) {
-                aiMessageDiv.innerHTML = formatAIResponse(fullResponse + '\n\n[Note: Response may be incomplete due to connection issues]');
-            } else {
-                aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong. Please try again.');
-            }
+            console.error('❌ Real-time streaming error:', error);
+            aiMessageDiv.innerHTML = formatAIResponse('Sorry, something went wrong with the real-time connection. Please try again.');
         }
     }
 
@@ -301,8 +284,8 @@ document.addEventListener('DOMContentLoaded', () => {
         chatLog.appendChild(aiMessageDiv);
         chatLog.scrollTop = chatLog.scrollHeight;
         
-        // Use smart continuation to prevent timeouts
-        await sendSmartMessage(prompt, aiMessageDiv);
+        // Use real-time SSE streaming to prevent timeouts
+        await sendStreamingMessage(prompt, aiMessageDiv);
         
         // Clean up
         aiMessageDiv.classList.remove('streaming');
@@ -512,4 +495,3 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('✅ Initial state complete');
     }, 100);
 });
-            

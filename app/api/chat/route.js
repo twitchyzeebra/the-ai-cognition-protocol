@@ -81,14 +81,14 @@ export async function POST(req) {
         }
 
         const systemPrompt = loadSystemPrompt();
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-pro",
+            systemInstruction: systemPrompt,
+        });
         
-        let fullHistory = Array.isArray(history) ? [...history] : [];
-        if (systemPrompt && (!fullHistory.length || fullHistory[0].role !== 'user')) {
-            fullHistory.unshift({ role: 'user', parts: [{ text: systemPrompt }] });
-        }
-
-        const chat = model.startChat({ history: fullHistory });
+        const chat = model.startChat({ 
+            history: Array.isArray(history) ? history : [] 
+        });
         const result = await chat.sendMessageStream(prompt);
 
         // Create a ReadableStream to pipe the AI response

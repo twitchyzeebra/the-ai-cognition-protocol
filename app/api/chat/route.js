@@ -86,8 +86,12 @@ export async function POST(req) {
             systemInstruction: systemPrompt,
         });
         
+        const validHistory = (Array.isArray(history) ? history : []).filter(
+            (m) => m.parts.every((p) => p.text && p.text.trim() !== '')
+        );
+
         const chat = model.startChat({ 
-            history: Array.isArray(history) ? history : [] 
+            history: validHistory
         });
         const result = await chat.sendMessageStream(prompt);
 

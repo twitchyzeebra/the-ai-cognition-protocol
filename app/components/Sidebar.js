@@ -11,14 +11,32 @@ export default function Sidebar({
     onDownload,
     onUpload,
     learningResources,
-    onSelectResource
+    onSelectResource,
+    onDeleteChat
 }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isHistoryVisible, setIsHistoryVisible] = useState(true);
     const [isResourcesVisible, setIsResourcesVisible] = useState(true);
+    const [confirmingDelete, setConfirmingDelete] = useState(null);
 
     const handleToggleSidebar = () => {
         setIsCollapsed(!isCollapsed);
+    };
+
+    const handleDeleteClick = (e, chatId) => {
+        e.stopPropagation(); // Prevent chat selection
+        if (confirmingDelete === chatId) {
+            onDeleteChat(chatId);
+            setConfirmingDelete(null);
+        } else {
+            setConfirmingDelete(chatId);
+        }
+    };
+
+    const handleMouseLeave = (chatId) => {
+        if (confirmingDelete === chatId) {
+            setConfirmingDelete(null);
+        }
     };
 
     return (
@@ -44,8 +62,15 @@ export default function Sidebar({
                                             key={chat.id} 
                                             className={`history-item ${chat.id === activeChatId ? 'active' : ''}`}
                                             onClick={() => onSelectChat(chat.id)}
+                                            onMouseLeave={() => handleMouseLeave(chat.id)}
                                         >
-                                            {chat.title}
+                                            <span className="chat-title">{chat.title}</span>
+                                            <button 
+                                                className="delete-chat-btn"
+                                                onClick={(e) => handleDeleteClick(e, chat.id)}
+                                            >
+                                                {confirmingDelete === chat.id ? 'Sure?' : '🗑️'}
+                                            </button>
                                         </li>
                                     ))}
                                 </ul>

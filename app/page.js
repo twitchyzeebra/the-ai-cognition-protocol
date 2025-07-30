@@ -94,6 +94,14 @@ export default function Home() {
         }
     };
 
+    const handleDeleteChat = (id) => {
+        setChatHistory(prev => prev.filter(chat => chat.id !== id));
+        if (activeChatId === id) {
+            setActiveChatId(null);
+            setMessages([]);
+        }
+    };
+
     const handleDownload = () => {
         if (!activeChatId) {
             // If no chat is active, download the entire history
@@ -264,6 +272,7 @@ export default function Home() {
                 onUpload={handleUpload}
                 learningResources={learningResources}
                 onSelectResource={handleSelectResource}
+                onDeleteChat={handleDeleteChat}
             />
             <main id="main-content">
                 {!isChatCollapsed && (

@@ -1,7 +1,7 @@
 {
   "name": "gemini-netlify-app",
   "version": "1.0.0",
-  "description": "",
+  "description": "A Next.js chat application using the Gemini API.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -13,16 +13,12 @@
   "license": "ISC",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "cors": "^2.8.5",
     "dotenv": "^17.2.1",
-    "express": "^5.1.0",
     "next": "^15.4.5",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
-  "devDependencies": {
-    "netlify-lambda": "^2.0.16"
-  }
+  "devDependencies": {}
 }

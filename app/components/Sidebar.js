@@ -30,9 +30,9 @@ export default function Sidebar({
                 </ul>
             </div>
             <div className="sidebar-footer">
-                <button onClick={onDownload} className="sidebar-btn">Download History</button>
+                <button onClick={onDownload} className="sidebar-btn">Download Chat</button>
                 <label htmlFor="upload-btn" className="sidebar-btn">
-                    Upload History
+                    Upload Chat
                 </label>
                 <input id="upload-btn" type="file" accept=".json" onChange={onUpload} style={{ display: 'none' }} />
             </div>

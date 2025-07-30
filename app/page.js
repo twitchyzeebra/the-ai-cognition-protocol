@@ -13,6 +13,11 @@ export default function Home() {
     const [isLoading, setIsLoading] = useState(false);
     const [chatHistory, setChatHistory] = useState([]);
     const [activeChatId, setActiveChatId] = useState(null);
+    const [learningResources, setLearningResources] = useState([]);
+    const [selectedResource, setSelectedResource] = useState(null);
+    const [resourceContent, setResourceContent] = useState('');
+    const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+    const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
     const chatLogRef = useRef(null);
 
     // Load chat history from localStorage on initial render
@@ -21,6 +26,7 @@ export default function Home() {
         if (storedHistory) {
             setChatHistory(JSON.parse(storedHistory));
         }
+        fetchLearningResources();
     }, []);
 
     // Save chat history to localStorage whenever it changes
@@ -37,16 +43,54 @@ export default function Home() {
         }
     }, [messages]);
 
+    const fetchLearningResources = async () => {
+        try {
+            const response = await fetch('/api/learning-resources');
+            const data = await response.json();
+            setLearningResources(data);
+        } catch (error) {
+            console.error('Failed to fetch learning resources:', error);
+        }
+    };
+
+    const handleSelectResource = async (slug) => {
+        if (slug === selectedResource) {
+            // If the currently selected resource is clicked again, toggle collapse state.
+            setIsResourceCollapsed(prev => !prev);
+        } else {
+            try {
+                const response = await fetch(`/api/learning-resources/${slug}`);
+                const data = await response.json();
+                setSelectedResource(slug);
+                setResourceContent(data.content);
+                setIsResourceCollapsed(false); // Ensure resource is visible
+            } catch (error) {
+                console.error(`Failed to fetch resource ${slug}:`, error);
+            }
+        }
+    };
+
     const handleNewChat = () => {
         setActiveChatId(null);
         setMessages([]);
+        setSelectedResource(null);
+        setResourceContent('');
     };
 
     const handleSelectChat = (id) => {
-        const chat = chatHistory.find(c => c.id === id);
-        if (chat) {
-            setActiveChatId(id);
-            setMessages(chat.messages);
+        if (id === activeChatId) {
+            // If the currently active chat is clicked again, toggle collapse state.
+            setIsChatCollapsed(prev => !prev);
+        } else {
+            // Otherwise, select the new chat and make sure it's visible.
+            const chat = chatHistory.find(c => c.id === id);
+            if (chat) {
+                setActiveChatId(id);
+                setMessages(chat.messages);
+                setSelectedResource(null); // Deselect any resource
+                setResourceContent('');
+                setIsChatCollapsed(false); // Ensure chat is visible
+            }
         }
     };
 
@@ -121,11 +165,10 @@ export default function Home() {
         event.target.value = null;
     };
 
-    const sendMessage = async (e) => {
-        e.preventDefault();
+    const handleSendMessage = async () => {
         if (!input.trim()) return;
 
-        const userMessage = { role: 'user', text: input };
+        const userMessage = { role: 'user', content: input };
         const newMessages = [...messages, userMessage];
         setMessages(newMessages);
         setInput('');
@@ -141,7 +184,7 @@ export default function Home() {
                     prompt: input,
                     history: messages.map(m => ({
                         role: m.role === 'user' ? 'user' : 'model',
-                        parts: [{ text: m.text }]
+                        parts: [{ text: m.content }]
                     }))
                 }),
             });
@@ -153,6 +196,9 @@ export default function Home() {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let aiResponseText = '';
+            
+            // Add a placeholder for the AI response
+            setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -168,11 +214,10 @@ export default function Home() {
                             if (json.type === 'chunk' && json.text) {
                                 aiResponseText += json.text;
                                 setMessages(prev => {
-                                    const lastMsg = prev[prev.length - 1];
-                                    if (lastMsg.role === 'assistant') {
-                                        return [...prev.slice(0, -1), { ...lastMsg, text: aiResponseText }];
-                                    }
-                                    return [...prev, { role: 'assistant', text: aiResponseText }];
+                                    const lastMsgIndex = prev.length - 1;
+                                    const updatedMessages = [...prev];
+                                    updatedMessages[lastMsgIndex] = { ...updatedMessages[lastMsgIndex], content: aiResponseText };
+                                    return updatedMessages;
                                 });
                             } else if (json.type === 'error') {
                                 throw new Error(json.message);
@@ -184,9 +229,8 @@ export default function Home() {
                 }
             }
             
-            const finalMessages = [...newMessages, { role: 'assistant', text: aiResponseText }];
-            setMessages(finalMessages);
-
+            const finalMessages = [...newMessages, { role: 'assistant', content: aiResponseText }];
+            
             if (currentChatId) {
                 // Update existing chat
                 setChatHistory(prev => prev.map(chat =>
@@ -196,13 +240,14 @@ export default function Home() {
                 // Create a new chat
                 const newId = Date.now().toString();
                 const newTitle = input.substring(0, 30);
-                setChatHistory(prev => [...prev, { id: newId, title: newTitle, messages: finalMessages }]);
+                const newChat = { id: newId, title: newTitle, messages: finalMessages };
+                setChatHistory(prev => [...prev, newChat]);
                 setActiveChatId(newId);
             }
 
         } catch (error) {
             console.error("API error:", error);
-            setMessages(prev => [...prev, { role: 'assistant', text: `Sorry, I encountered an error: ${error.message}` }]);
+            setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, I encountered an error: ${error.message}` }]);
         } finally {
             setIsLoading(false);
         }
@@ -211,49 +256,59 @@ export default function Home() {
     return (
         <div id="container">
             <Sidebar 
-                history={chatHistory}
-                onNewChat={handleNewChat}
+                history={chatHistory} 
+                onNewChat={handleNewChat} 
                 onSelectChat={handleSelectChat}
                 activeChatId={activeChatId}
                 onDownload={handleDownload}
                 onUpload={handleUpload}
+                learningResources={learningResources}
+                onSelectResource={handleSelectResource}
             />
             <main id="main-content">
-                <section id="chat-section">
-                    <div id="chat-log" ref={chatLogRef}>
-                        {messages.map((msg, index) => (
-                            <div key={index} className={`chat-message ${msg.role}`}>
-                                <div className="message-content">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
-                                </div>
-                            </div>
-                        ))}
-                        {isLoading && (
-                            <div className="chat-message assistant">
-                                <div className="message-content">
-                                    <div className="loading-indicator">
-                                        <span></span><span></span><span></span>
+                {!isChatCollapsed && (
+                    <div id="chat-column">
+                        <div id="chat-log" ref={chatLogRef}>
+                            {messages.map((msg, index) => (
+                                <div key={index} className={`message ${msg.role}`}>
+                                    <div className="content">
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            ))}
+                            {isLoading && (
+                                <div className="message assistant">
+                                    <div className="loader"></div>
+                                </div>
+                            )}
+                        </div>
+                        <div id="chat-input">
+                            <textarea
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleSendMessage();
+                                    }
+                                }}
+                                placeholder="Type your message..."
+                                disabled={isLoading}
+                            />
+                            <button onClick={handleSendMessage} disabled={isLoading}>
+                                {isLoading ? 'Thinking...' : 'Send'}
+                            </button>
+                        </div>
                     </div>
-                    <form id="chat-form" onSubmit={sendMessage}>
-                        <textarea
-                            id="chat-input"
-                            placeholder="Type your message..."
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    sendMessage(e);
-                                }
-                            }}
-                        ></textarea>
-                        <button type="submit" id="send-button">Send</button>
-                    </form>
-                </section>
+                )}
+                
+                {selectedResource && !isResourceCollapsed && (
+                    <div id="resource-column">
+                        <div className="prose lg:prose-xl p-4">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{resourceContent}</ReactMarkdown>
+                        </div>
+                    </div>
+                )}
             </main>
         </div>
     );

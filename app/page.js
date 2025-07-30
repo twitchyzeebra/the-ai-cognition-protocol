@@ -3,13 +3,32 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import Sidebar from './components/Sidebar';
+import './components/Sidebar.css';
 import './globals.css';
 
 export default function Home() {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [chatHistory, setChatHistory] = useState([]);
+    const [activeChatId, setActiveChatId] = useState(null);
     const chatLogRef = useRef(null);
+
+    // Load chat history from localStorage on initial render
+    useEffect(() => {
+        const storedHistory = localStorage.getItem('chatHistory');
+        if (storedHistory) {
+            setChatHistory(JSON.parse(storedHistory));
+        }
+    }, []);
+
+    // Save chat history to localStorage whenever it changes
+    useEffect(() => {
+        if (chatHistory.length > 0) {
+            localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+        }
+    }, [chatHistory]);
 
     useEffect(() => {
         // Auto-scroll to the bottom of the chat log
@@ -18,24 +37,108 @@ export default function Home() {
         }
     }, [messages]);
 
+    const handleNewChat = () => {
+        setActiveChatId(null);
+        setMessages([]);
+    };
+
+    const handleSelectChat = (id) => {
+        const chat = chatHistory.find(c => c.id === id);
+        if (chat) {
+            setActiveChatId(id);
+            setMessages(chat.messages);
+        }
+    };
+
+    const handleDownload = () => {
+        if (!activeChatId) {
+            // If no chat is active, download the entire history
+            if (chatHistory.length === 0) {
+                alert("No chat history to download.");
+                return;
+            }
+            const blob = new Blob([JSON.stringify(chatHistory, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `all-chat-history.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } else {
+            // If a chat is active, download only that chat
+            const activeChat = chatHistory.find(chat => chat.id === activeChatId);
+            if (activeChat) {
+                const blob = new Blob([JSON.stringify(activeChat, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chat-history-${activeChat.title.replace(/\s+/g, '_')}-${activeChat.id}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        }
+    };
+
+    const handleUpload = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const uploadedHistory = JSON.parse(e.target.result);
+                // Basic validation to see if it's a single chat or all history
+                if (Array.isArray(uploadedHistory) && uploadedHistory.every(c => c.id && c.title && c.messages)) {
+                    // It's likely an array of chats (all history)
+                    setChatHistory(prev => {
+                        const existingIds = new Set(prev.map(c => c.id));
+                        const newChats = uploadedHistory.filter(c => !existingIds.has(c.id));
+                        return [...prev, ...newChats];
+                    });
+                } else if (uploadedHistory.id && uploadedHistory.title && uploadedHistory.messages) {
+                    // It's likely a single chat object
+                    setChatHistory(prev => {
+                        // Avoid duplicates
+                        if (prev.some(c => c.id === uploadedHistory.id)) {
+                            return prev;
+                        }
+                        return [...prev, uploadedHistory];
+                    });
+                } else {
+                    alert("Invalid chat history file format.");
+                }
+            } catch (error) {
+                console.error("Error parsing uploaded file:", error);
+                alert("Failed to upload history. The file might be corrupted or in the wrong format.");
+            }
+        };
+        reader.readAsText(file);
+        // Reset file input so the same file can be uploaded again
+        event.target.value = null;
+    };
+
     const sendMessage = async (e) => {
         e.preventDefault();
         if (!input.trim()) return;
 
         const userMessage = { role: 'user', text: input };
-        setMessages(prev => [...prev, userMessage]);
+        const newMessages = [...messages, userMessage];
+        setMessages(newMessages);
         setInput('');
         setIsLoading(true);
 
-        let aiMessage = { role: 'assistant', text: '' };
-        let currentText = '';
+        let currentChatId = activeChatId;
 
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    prompt: input, 
+                body: JSON.stringify({
+                    prompt: input,
                     history: messages.map(m => ({
                         role: m.role === 'user' ? 'user' : 'model',
                         parts: [{ text: m.text }]
@@ -49,12 +152,13 @@ export default function Home() {
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let aiResponseText = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value);
+                const chunk = decoder.decode(value, { stream: true });
                 const lines = chunk.split('\n\n');
 
                 for (const line of lines) {
@@ -62,44 +166,58 @@ export default function Home() {
                         try {
                             const json = JSON.parse(line.substring(5));
                             if (json.type === 'chunk' && json.text) {
-                                currentText += json.text;
+                                aiResponseText += json.text;
                                 setMessages(prev => {
                                     const lastMsg = prev[prev.length - 1];
                                     if (lastMsg.role === 'assistant') {
-                                        return [...prev.slice(0, -1), { ...lastMsg, text: currentText }];
+                                        return [...prev.slice(0, -1), { ...lastMsg, text: aiResponseText }];
                                     }
-                                    return [...prev, { role: 'assistant', text: currentText }];
+                                    return [...prev, { role: 'assistant', text: aiResponseText }];
                                 });
                             } else if (json.type === 'error') {
-                                console.error("Stream error:", json.message);
-                                setMessages(prev => {
-                                    const lastMsg = prev[prev.length - 1];
-                                    if (lastMsg.role === 'assistant') {
-                                        // If the last message was the placeholder, replace it
-                                        return [...prev.slice(0, -1), { role: 'assistant', text: `Error: ${json.message}` }];
-                                    }
-                                    // Otherwise, add a new error message
-                                    return [...prev, { role: 'assistant', text: `Error: ${json.message}` }];
-                                });
-                                setIsLoading(false);
-                            } else if (json.type === 'done') {
-                                setIsLoading(false);
+                                throw new Error(json.message);
                             }
                         } catch (e) {
-                            // Ignore parsing errors for incomplete JSON
+                            // Ignore incomplete JSON
                         }
                     }
                 }
             }
+            
+            const finalMessages = [...newMessages, { role: 'assistant', text: aiResponseText }];
+            setMessages(finalMessages);
+
+            if (currentChatId) {
+                // Update existing chat
+                setChatHistory(prev => prev.map(chat =>
+                    chat.id === currentChatId ? { ...chat, messages: finalMessages } : chat
+                ));
+            } else {
+                // Create a new chat
+                const newId = Date.now().toString();
+                const newTitle = input.substring(0, 30);
+                setChatHistory(prev => [...prev, { id: newId, title: newTitle, messages: finalMessages }]);
+                setActiveChatId(newId);
+            }
+
         } catch (error) {
-            console.error("Fetch error:", error);
-            setMessages(prev => [...prev, { role: 'assistant', text: "Sorry, I encountered an error." }]);
+            console.error("API error:", error);
+            setMessages(prev => [...prev, { role: 'assistant', text: `Sorry, I encountered an error: ${error.message}` }]);
+        } finally {
             setIsLoading(false);
         }
     };
 
     return (
         <div id="container">
+            <Sidebar 
+                history={chatHistory}
+                onNewChat={handleNewChat}
+                onSelectChat={handleSelectChat}
+                activeChatId={activeChatId}
+                onDownload={handleDownload}
+                onUpload={handleUpload}
+            />
             <main id="main-content">
                 <section id="chat-section">
                     <div id="chat-log" ref={chatLogRef}>

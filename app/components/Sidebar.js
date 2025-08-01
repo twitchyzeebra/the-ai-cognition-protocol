@@ -12,11 +12,15 @@ export default function Sidebar({
     onUpload,
     learningResources,
     onSelectResource,
-    onDeleteChat
+    onDeleteChat,
+    systemPrompts,
+    selectedSystemPrompt,
+    onSelectSystemPrompt
 }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isHistoryVisible, setIsHistoryVisible] = useState(true);
     const [isResourcesVisible, setIsResourcesVisible] = useState(true);
+    const [isPromptsVisible, setIsPromptsVisible] = useState(true);
     const [confirmingDelete, setConfirmingDelete] = useState(null);
 
     const handleToggleSidebar = () => {
@@ -97,6 +101,25 @@ export default function Sidebar({
                                         onClick={() => onSelectResource(resource.slug)}
                                     >
                                         {resource.title}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                    
+                    <div className="collapsible-section">
+                        <h2 onClick={() => setIsPromptsVisible(!isPromptsVisible)}>
+                            System Prompts {isPromptsVisible ? '▼' : '►'}
+                        </h2>
+                        {isPromptsVisible && (
+                            <ul className="history-list">
+                                {systemPrompts.map(prompt => (
+                                    <li 
+                                        key={prompt} 
+                                        className={`history-item ${prompt === selectedSystemPrompt ? 'active' : ''}`}
+                                        onClick={() => onSelectSystemPrompt(prompt)}
+                                    >
+                                        {prompt.replace(/-/g, ' ')}
                                     </li>
                                 ))}
                             </ul>

@@ -33,13 +33,15 @@ function decrypt(encryptedData, key) {
 }
 
 
-function loadSystemPrompt() {
+function loadSystemPrompt(promptName = 'system-prompt') {
     const fallbackPrompt = "You are a helpful AI assistant.";
     try {
-        const encryptedPath = path.join(process.cwd(), 'system-prompt-encrypted.json');
+        // Use the specified prompt name or default to system-prompt.json
+        const fileName = `${promptName}.json`;
+        const encryptedPath = path.join(process.cwd(), 'SystemPrompts', 'Encrypted', fileName);
         
         if (!fs.existsSync(encryptedPath)) {
-            console.log("Encrypted system prompt file not found, using fallback.");
+            console.log(`Encrypted system prompt file ${fileName} not found, using fallback.`);
             return fallbackPrompt;
         }
 
@@ -71,7 +73,7 @@ function loadSystemPrompt() {
 // Next.js API Route for streaming chat responses (Node.js runtime)
 export async function POST(req) {
     try {
-        const { prompt, history } = await req.json();
+        const { prompt, history, systemPrompt: selectedPrompt } = await req.json();
 
         if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
             return new Response(JSON.stringify({ error: 'Invalid prompt' }), {
@@ -80,7 +82,7 @@ export async function POST(req) {
             });
         }
 
-        const systemPrompt = loadSystemPrompt();
+        const systemPrompt = loadSystemPrompt(selectedPrompt);
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro",
             systemInstruction: systemPrompt,

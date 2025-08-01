@@ -43,3 +43,6 @@ dev-server.js
 
 # Old Netlify folder
 .netlify
+
+# Raw System Prompts
+/SystemPrompts/Raw/ 

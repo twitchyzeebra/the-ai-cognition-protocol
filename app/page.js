@@ -18,6 +18,8 @@ export default function Home() {
     const [resourceContent, setResourceContent] = useState('');
     const [isChatCollapsed, setIsChatCollapsed] = useState(false);
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
+    const [systemPrompts, setSystemPrompts] = useState([]);
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('system-prompt'); // Default prompt
     const chatLogRef = useRef(null);
 
     // Load chat history from localStorage on initial render
@@ -27,6 +29,7 @@ export default function Home() {
             setChatHistory(JSON.parse(storedHistory));
         }
         fetchLearningResources();
+        fetchSystemPrompts();
     }, []);
 
     // Save chat history to localStorage whenever it changes
@@ -50,6 +53,22 @@ export default function Home() {
             setLearningResources(data);
         } catch (error) {
             console.error('Failed to fetch learning resources:', error);
+        }
+    };
+
+    const fetchSystemPrompts = async () => {
+        try {
+            const response = await fetch('/api/system-prompts');
+            const data = await response.json();
+            setSystemPrompts(data);
+            
+            // Load previously selected prompt from localStorage or use default
+            const savedPrompt = localStorage.getItem('selectedSystemPrompt');
+            if (savedPrompt && data.includes(savedPrompt)) {
+                setSelectedSystemPrompt(savedPrompt);
+            }
+        } catch (error) {
+            console.error('Failed to fetch system prompts:', error);
         }
     };
 
@@ -100,6 +119,11 @@ export default function Home() {
             setActiveChatId(null);
             setMessages([]);
         }
+    };
+    
+    const handleSelectSystemPrompt = (promptName) => {
+        setSelectedSystemPrompt(promptName);
+        localStorage.setItem('selectedSystemPrompt', promptName);
     };
 
     const handleDownload = () => {
@@ -193,7 +217,8 @@ export default function Home() {
                     history: messages.map(m => ({
                         role: m.role === 'user' ? 'user' : 'model',
                         parts: [{ text: m.content }]
-                    }))
+                    })),
+                    systemPrompt: selectedSystemPrompt
                 }),
             });
 
@@ -273,50 +298,131 @@ export default function Home() {
                 learningResources={learningResources}
                 onSelectResource={handleSelectResource}
                 onDeleteChat={handleDeleteChat}
+                systemPrompts={systemPrompts}
+                selectedSystemPrompt={selectedSystemPrompt}
+                onSelectSystemPrompt={handleSelectSystemPrompt}
             />
             <main id="main-content">
-                {!isChatCollapsed && (
-                    <div id="chat-column">
-                        <div id="chat-log" ref={chatLogRef}>
-                            {messages.map((msg, index) => (
-                                <div key={index} className={`message ${msg.role}`}>
-                                    <div className="content">
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                                    </div>
-                                </div>
-                            ))}
-                            {isLoading && (
-                                <div className="message assistant">
-                                    <div className="loader"></div>
-                                </div>
+                {/* Show landing page when both chat and resources are collapsed */}
+                {isChatCollapsed && (!selectedResource || isResourceCollapsed) ? (
+                    <div className="landing-page-centered">
+                        <h1>Welcome to The AI Cognition Protocol</h1>
+                        <p>Select a system prompt from the sidebar to customize your AI experience.</p>
+                        <p>Currently using: <strong>{selectedSystemPrompt.replace(/-/g, ' ')}</strong></p>
+                        
+                        <div className="panel-controls">
+                            <button 
+                                onClick={() => setIsChatCollapsed(false)}
+                                className="panel-toggle-btn"
+                            >
+                                Show Chat Panel
+                            </button>
+                            {selectedResource && (
+                                <button 
+                                    onClick={() => setIsResourceCollapsed(false)}
+                                    className="panel-toggle-btn"
+                                >
+                                    Show Resource Panel
+                                </button>
                             )}
                         </div>
-                        <div id="chat-input">
-                            <textarea
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                        e.preventDefault();
-                                        handleSendMessage();
-                                    }
+
+                        <div className="landing-options">
+                            <button 
+                                onClick={() => {
+                                    setInput("Tell me about yourself and your capabilities.");
+                                    setIsChatCollapsed(false); // Show the chat
                                 }}
-                                placeholder="Type your message..."
-                                disabled={isLoading}
-                            />
-                            <button onClick={handleSendMessage} disabled={isLoading}>
-                                {isLoading ? 'Thinking...' : 'Send'}
+                                className="landing-option-btn"
+                            >
+                                Tell me about your capabilities
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setInput("How can you help me with creative projects?");
+                                    setIsChatCollapsed(false); // Show the chat
+                                }}
+                                className="landing-option-btn"
+                            >
+                                Help with creative projects
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setInput("I need assistance with problem-solving.");
+                                    setIsChatCollapsed(false); // Show the chat
+                                }}
+                                className="landing-option-btn"
+                            >
+                                Problem-solving assistance
                             </button>
                         </div>
                     </div>
-                )}
-                
-                {selectedResource && !isResourceCollapsed && (
-                    <div id="resource-column">
-                        <div className="prose lg:prose-xl p-4">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{resourceContent}</ReactMarkdown>
-                        </div>
-                    </div>
+                ) : (
+                    <>
+                        {!isChatCollapsed && (
+                            <div id="chat-column">
+                                <div className="column-header">
+                                    <h2>Chat</h2>
+                                    <button 
+                                        className="collapse-btn" 
+                                        onClick={() => setIsChatCollapsed(true)} 
+                                        title="Collapse chat"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <div id="chat-log" ref={chatLogRef}>
+                                    {messages.map((msg, index) => (
+                                        <div key={index} className={`message ${msg.role}`}>
+                                            <div className="content">
+                                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {isLoading && (
+                                        <div className="message assistant">
+                                            <div className="loader"></div>
+                                        </div>
+                                    )}
+                                </div>
+                                <div id="chat-input">
+                                    <textarea
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                handleSendMessage();
+                                            }
+                                        }}
+                                        placeholder="Type your message..."
+                                        disabled={isLoading}
+                                    />
+                                    <button onClick={handleSendMessage} disabled={isLoading}>
+                                        {isLoading ? 'Thinking...' : 'Send'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        
+                        {selectedResource && !isResourceCollapsed && (
+                            <div id="resource-column">
+                                <div className="column-header">
+                                    <h2>Resource: {selectedResource.replace(/-/g, ' ')}</h2>
+                                    <button 
+                                        className="collapse-btn" 
+                                        onClick={() => setIsResourceCollapsed(true)} 
+                                        title="Collapse resource"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <div className="prose lg:prose-xl p-4">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{resourceContent}</ReactMarkdown>
+                                </div>
+                            </div>
+                        )}
+                    </>
                 )}
             </main>
         </div>

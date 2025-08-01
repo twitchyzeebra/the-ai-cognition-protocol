@@ -74,26 +74,34 @@ function main() {
     console.log('===========================================');
 
     const command = process.argv[2];
+    const promptName = process.argv[3];
     const keyFromEnv = process.env.SYSTEM_PROMPT_KEY ? process.env.SYSTEM_PROMPT_KEY.trim() : null;
 
-    if (command === 'encrypt') {
-        handleEncryption(keyFromEnv);
-    } else if (command === 'decrypt') {
-        handleDecryption(keyFromEnv);
-    } else {
+    if (!command || !promptName) {
         console.log('\nUsage:');
-        console.log('  node encrypt-prompt.js encrypt   - Encrypts system-prompt.txt');
-        console.log('  node encrypt-prompt.js decrypt   - Tests decryption of system-prompt-encrypted.json');
+        console.log('  node encrypt-prompt.js encrypt <prompt-name>   - Encrypts SystemPrompts/Raw/<prompt-name>.txt');
+        console.log('  node encrypt-prompt.js decrypt <prompt-name>   - Tests decryption of SystemPrompts/Encrypted/<prompt-name>.json');
+        console.log('\n<prompt-name> is the base filename without extension (e.g., "system-prompt-relational-cognition").');
         console.log('\nAn encryption key must be set in the SYSTEM_PROMPT_KEY environment variable in your .env file.');
+        return;
+    }
+
+    if (command === 'encrypt') {
+        handleEncryption(keyFromEnv, promptName);
+    } else if (command === 'decrypt') {
+        handleDecryption(keyFromEnv, promptName);
+    } else {
+        console.error(`\nUnknown command: ${command}`);
     }
 }
 
 /**
  * Handles the encryption process.
  * @param {string|null} keyHex - The hex-encoded key from environment variables.
+ * @param {string} promptName - The base name of the prompt file.
  */
-function handleEncryption(keyHex) {
-    console.log('\n--- Encrypting ---');
+function handleEncryption(keyHex, promptName) {
+    console.log(`\n--- Encrypting: ${promptName} ---`);
     if (!keyHex) {
         console.error('Error: SYSTEM_PROMPT_KEY is not set in your .env file.');
         console.log('Please generate a key and add it to your .env file:');
@@ -103,8 +111,12 @@ function handleEncryption(keyHex) {
 
     try {
         const key = getKey(keyHex);
-        const promptPath = path.resolve('system-prompt.txt');
-        const outputPath = path.resolve('system-prompt-encrypted.json');
+        const rawDir = path.resolve('SystemPrompts', 'Raw');
+        const encryptedDir = path.resolve('SystemPrompts', 'Encrypted');
+        fs.mkdirSync(encryptedDir, { recursive: true });
+
+        const promptPath = path.join(rawDir, `${promptName}.txt`);
+        const outputPath = path.join(encryptedDir, `${promptName}.json`);
 
         if (!fs.existsSync(promptPath)) {
             throw new Error(`Input file not found at ${promptPath}`);
@@ -115,7 +127,7 @@ function handleEncryption(keyHex) {
         systemPrompt = systemPrompt.replace(/\r\n/g, '\n').replace(/^\uFEFF/, '');
 
         if (!systemPrompt.trim()) {
-            throw new Error('system-prompt.txt is empty.');
+            throw new Error(`${promptPath} is empty.`);
         }
 
         const encryptedData = encrypt(systemPrompt, key);
@@ -132,9 +144,10 @@ function handleEncryption(keyHex) {
 /**
  * Handles the decryption process for testing.
  * @param {string|null} keyHex - The hex-encoded key from environment variables.
+ * @param {string} promptName - The base name of the prompt file.
  */
-function handleDecryption(keyHex) {
-    console.log('\n--- Testing Decryption ---');
+function handleDecryption(keyHex, promptName) {
+    console.log(`\n--- Testing Decryption: ${promptName} ---`);
     if (!keyHex) {
         console.error('Error: SYSTEM_PROMPT_KEY is not set in your .env file.');
         return;
@@ -142,7 +155,8 @@ function handleDecryption(keyHex) {
 
     try {
         const key = getKey(keyHex);
-        const inputPath = path.resolve('system-prompt-encrypted.json');
+        const encryptedDir = path.resolve('SystemPrompts', 'Encrypted');
+        const inputPath = path.join(encryptedDir, `${promptName}.json`);
 
         if (!fs.existsSync(inputPath)) {
             throw new Error(`Encrypted file not found at ${inputPath}`);

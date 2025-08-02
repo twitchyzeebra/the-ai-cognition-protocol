@@ -16,7 +16,7 @@ export default function Home() {
     const [learningResources, setLearningResources] = useState([]);
     const [selectedResource, setSelectedResource] = useState(null);
     const [resourceContent, setResourceContent] = useState('');
-    const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+    const [isChatCollapsed, setIsChatCollapsed] = useState(true); // Chat panel minimized by default
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
     const [systemPrompts, setSystemPrompts] = useState([]);
     const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('system-prompt'); // Default prompt
@@ -24,20 +24,64 @@ export default function Home() {
 
     // Load chat history from localStorage on initial render
     useEffect(() => {
-        const storedHistory = localStorage.getItem('chatHistory');
-        if (storedHistory) {
-            setChatHistory(JSON.parse(storedHistory));
+        // Load complete page state from localStorage if available
+        const storedPageState = localStorage.getItem('pageState');
+        if (storedPageState) {
+            try {
+                const parsedState = JSON.parse(storedPageState);
+                
+                // Restore all state values
+                if (parsedState.chatHistory) setChatHistory(parsedState.chatHistory);
+                if (parsedState.messages) setMessages(parsedState.messages);
+                if (parsedState.activeChatId) setActiveChatId(parsedState.activeChatId);
+                if (parsedState.selectedResource) setSelectedResource(parsedState.selectedResource);
+                if (parsedState.resourceContent) setResourceContent(parsedState.resourceContent);
+                if (parsedState.isChatCollapsed !== undefined) setIsChatCollapsed(parsedState.isChatCollapsed);
+                if (parsedState.isResourceCollapsed !== undefined) setIsResourceCollapsed(parsedState.isResourceCollapsed);
+                if (parsedState.selectedSystemPrompt) setSelectedSystemPrompt(parsedState.selectedSystemPrompt);
+                
+                console.log('Restored page state from localStorage');
+            } catch (error) {
+                console.error('Failed to parse stored page state:', error);
+                // Fall back to just loading chat history for backward compatibility
+                const storedHistory = localStorage.getItem('chatHistory');
+                if (storedHistory) {
+                    setChatHistory(JSON.parse(storedHistory));
+                }
+            }
+        } else {
+            // Backward compatibility
+            const storedHistory = localStorage.getItem('chatHistory');
+            if (storedHistory) {
+                setChatHistory(JSON.parse(storedHistory));
+            }
         }
+        
         fetchLearningResources();
         fetchSystemPrompts();
     }, []);
 
-    // Save chat history to localStorage whenever it changes
+    // Save complete page state to localStorage whenever relevant state changes
     useEffect(() => {
+        const pageState = {
+            chatHistory,
+            messages,
+            activeChatId,
+            selectedResource,
+            resourceContent,
+            isChatCollapsed,
+            isResourceCollapsed,
+            selectedSystemPrompt
+        };
+        
+        localStorage.setItem('pageState', JSON.stringify(pageState));
+        
+        // Keep the old chatHistory item for backward compatibility
         if (chatHistory.length > 0) {
             localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
         }
-    }, [chatHistory]);
+    }, [chatHistory, messages, activeChatId, selectedResource, 
+        resourceContent, isChatCollapsed, isResourceCollapsed, selectedSystemPrompt]);
 
     useEffect(() => {
         // Auto-scroll to the bottom of the chat log
@@ -90,10 +134,22 @@ export default function Home() {
     };
 
     const handleNewChat = () => {
+        // Clear the current state
         setActiveChatId(null);
         setMessages([]);
         setSelectedResource(null);
         setResourceContent('');
+        setInput(''); // Clear the input field
+        setIsChatCollapsed(false); // Ensure the chat panel is visible
+        
+        // Create a small delay to ensure the DOM is updated
+        setTimeout(() => {
+            // Find the textarea and focus it
+            const textareaElement = document.querySelector('#chat-input textarea');
+            if (textareaElement) {
+                textareaElement.focus();
+            }
+        }, 50);
     };
 
     const handleSelectChat = (id) => {
@@ -124,6 +180,30 @@ export default function Home() {
     const handleSelectSystemPrompt = (promptName) => {
         setSelectedSystemPrompt(promptName);
         localStorage.setItem('selectedSystemPrompt', promptName);
+    };
+    
+    const handleResetPageState = () => {
+        // Confirm with the user before resetting
+        if (window.confirm('Are you sure you want to reset the page state? This will clear all chats and selections.')) {
+            // Clear all state
+            setMessages([]);
+            setInput('');
+            setChatHistory([]);
+            setActiveChatId(null);
+            setSelectedResource(null);
+            setResourceContent('');
+            setIsChatCollapsed(true); // Chat panel minimized after reset
+            setIsResourceCollapsed(false);
+            setSelectedSystemPrompt('system-prompt');
+            
+            // Clear localStorage
+            localStorage.removeItem('pageState');
+            localStorage.removeItem('chatHistory');
+            localStorage.removeItem('selectedSystemPrompt');
+            
+            // Notify the user
+            alert('Page state has been reset successfully.');
+        }
     };
 
     const handleDownload = () => {
@@ -301,6 +381,7 @@ export default function Home() {
                 systemPrompts={systemPrompts}
                 selectedSystemPrompt={selectedSystemPrompt}
                 onSelectSystemPrompt={handleSelectSystemPrompt}
+                onResetPageState={handleResetPageState}
             />
             <main id="main-content">
                 {/* Show landing page when both chat and resources are collapsed */}

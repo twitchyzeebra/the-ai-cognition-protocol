@@ -29,9 +29,6 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# System prompt files (keep sensitive content out of repo)
-system-prompt.txt
-
 # Misc
 .DS_Store
 *.pem
@@ -46,3 +43,6 @@ dev-server.js
 
 # Raw System Prompts
 /SystemPrompts/Raw/ 
+
+#Copilot Instructions and other files
+.github/

@@ -77,10 +77,11 @@ function main() {
     const promptName = process.argv[3];
     const keyFromEnv = process.env.SYSTEM_PROMPT_KEY ? process.env.SYSTEM_PROMPT_KEY.trim() : null;
 
-    if (!command || !promptName) {
+    if (!command || (command !== 'generate-key' && !promptName)) {
         console.log('\nUsage:');
         console.log('  node encrypt-prompt.js encrypt <prompt-name>   - Encrypts SystemPrompts/Raw/<prompt-name>.txt');
         console.log('  node encrypt-prompt.js decrypt <prompt-name>   - Tests decryption of SystemPrompts/Encrypted/<prompt-name>.json');
+        console.log('  node encrypt-prompt.js generate-key           - Generates a new encryption key');
         console.log('\n<prompt-name> is the base filename without extension (e.g., "system-prompt-relational-cognition").');
         console.log('\nAn encryption key must be set in the SYSTEM_PROMPT_KEY environment variable in your .env file.');
         return;
@@ -90,10 +91,13 @@ function main() {
         handleEncryption(keyFromEnv, promptName);
     } else if (command === 'decrypt') {
         handleDecryption(keyFromEnv, promptName);
+    } else if (command === 'generate-key') {
+        generateKey();
     } else {
         console.error(`\nUnknown command: ${command}`);
     }
 }
+
 
 /**
  * Handles the encryption process.
@@ -178,6 +182,18 @@ function handleDecryption(keyHex, promptName) {
     } catch (error) {
         console.error(`Decryption test failed: ${error.message}`);
     }
+}
+
+/**
+ * Generates a new encryption key.
+ */
+function generateKey() {
+    const newKey = crypto.randomBytes(KEY_LENGTH).toString('hex');
+    console.log('\n--- New Encryption Key Generated ---');
+    console.log('\nAdd this to your .env file:');
+    console.log(`SYSTEM_PROMPT_KEY=${newKey}`);
+    console.log('\nKEEP THIS KEY SECURE! It is used to decrypt your system prompts.');
+    console.log('Do not share it or commit it to version control.');
 }
 
 main();

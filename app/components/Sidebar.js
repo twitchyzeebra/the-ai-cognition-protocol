@@ -15,7 +15,8 @@ export default function Sidebar({
     onDeleteChat,
     systemPrompts,
     selectedSystemPrompt,
-    onSelectSystemPrompt
+    onSelectSystemPrompt,
+    onResetPageState
 }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isHistoryVisible, setIsHistoryVisible] = useState(true);
@@ -124,6 +125,16 @@ export default function Sidebar({
                                 ))}
                             </ul>
                         )}
+                    </div>
+                    
+                    <div className="sidebar-footer">
+                        <button 
+                            onClick={onResetPageState}
+                            className="reset-btn"
+                            title="Reset all application state including chats, selections, and collapsed panels"
+                        >
+                            Reset Application State
+                        </button>
                     </div>
                 </div>
             </div>

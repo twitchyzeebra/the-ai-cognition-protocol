@@ -5,7 +5,8 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request, { params }) {
-    const slug = await params.slug;
+    const resolvedParams = await params;
+    const slug = resolvedParams.slug;
 
     if (!slug) {
         return NextResponse.json({ message: 'Slug is required' }, { status: 400 });

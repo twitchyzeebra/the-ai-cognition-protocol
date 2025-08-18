@@ -4,8 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Sidebar from './components/Sidebar';
-import './components/Sidebar.css';
-import './globals.css';
+import chatDB from '../lib/database';
 
 export default function Home() {
     const [messages, setMessages] = useState([]);
@@ -19,76 +18,191 @@ export default function Home() {
     const [isChatCollapsed, setIsChatCollapsed] = useState(true); // Chat panel minimized by default
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
     const [systemPrompts, setSystemPrompts] = useState([]);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('system-prompt'); // Default prompt
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Default'); // Default prompt
+    const [llmSettings, setLlmSettings] = useState({ 
+        provider: 'google', 
+        models: { google: '', openai: '', anthropic: '', mistral: '' },
+        temperature: 0.7,
+        useProviderDefaultTemperature: true,
+        apiKeys: {
+            google: '',
+            openai: '',
+            anthropic: '',
+            mistral: ''
+        }
+    });
     const chatLogRef = useRef(null);
+    const inflightControllerRef = useRef(null);
+    const retryStateRef = useRef(null);
+    const [messagesLoaded, setMessagesLoaded] = useState(true);
 
-    // Load chat history from localStorage on initial render
+        const [isLoaded, setIsLoaded] = useState(false);
+
+    // Load state on initial render
     useEffect(() => {
-        // Load complete page state from localStorage if available
-        const storedPageState = localStorage.getItem('pageState');
-        if (storedPageState) {
+        const loadAppState = async () => {
             try {
-                const parsedState = JSON.parse(storedPageState);
+                // First, try to migrate from localStorage if needed
+                await chatDB.migrateFromLocalStorage();
                 
-                // Restore all state values
-                if (parsedState.chatHistory) setChatHistory(parsedState.chatHistory);
-                if (parsedState.messages) setMessages(parsedState.messages);
-                if (parsedState.activeChatId) setActiveChatId(parsedState.activeChatId);
-                if (parsedState.selectedResource) setSelectedResource(parsedState.selectedResource);
-                if (parsedState.resourceContent) setResourceContent(parsedState.resourceContent);
-                if (parsedState.isChatCollapsed !== undefined) setIsChatCollapsed(parsedState.isChatCollapsed);
-                if (parsedState.isResourceCollapsed !== undefined) setIsResourceCollapsed(parsedState.isResourceCollapsed);
-                if (parsedState.selectedSystemPrompt) setSelectedSystemPrompt(parsedState.selectedSystemPrompt);
+                // Load UI state from localStorage (non-chat data)
+                const storedPageState = localStorage.getItem('pageState');
+                let storedActiveChatId = null;
                 
-                console.log('Restored page state from localStorage');
+                if (storedPageState) {
+                    try {
+                        const parsedState = JSON.parse(storedPageState);
+                        
+                        // Restore UI state (excluding chat history and messages)
+                        if (parsedState.activeChatId) {
+                            storedActiveChatId = parsedState.activeChatId;
+                            setActiveChatId(parsedState.activeChatId);
+                        }
+                        if (parsedState.selectedResource) setSelectedResource(parsedState.selectedResource);
+                        if (parsedState.resourceContent) setResourceContent(parsedState.resourceContent);
+                        if (parsedState.isChatCollapsed !== undefined) setIsChatCollapsed(parsedState.isChatCollapsed);
+                        if (parsedState.isResourceCollapsed !== undefined) setIsResourceCollapsed(parsedState.isResourceCollapsed);
+                        if (parsedState.selectedSystemPrompt) setSelectedSystemPrompt(parsedState.selectedSystemPrompt);
+                        
+                        // Always set llmSettings to ensure proper structure
+                        setLlmSettings({
+                            provider: parsedState.llmSettings?.provider || 'google',
+                            models: parsedState.llmSettings?.models || {
+                                google: parsedState.llmSettings?.provider === 'google' ? (parsedState.llmSettings?.model || '') : '',
+                                openai: parsedState.llmSettings?.provider === 'openai' ? (parsedState.llmSettings?.model || '') : '',
+                                anthropic: parsedState.llmSettings?.provider === 'anthropic' ? (parsedState.llmSettings?.model || '') : '',
+                                mistral: parsedState.llmSettings?.provider === 'mistral' ? (parsedState.llmSettings?.model || '') : ''
+                            },
+                            temperature: typeof parsedState.llmSettings?.temperature === 'number' ? parsedState.llmSettings.temperature : 0.7,
+                            useProviderDefaultTemperature: !!parsedState.llmSettings?.useProviderDefaultTemperature,
+                            apiKeys: parsedState.llmSettings?.apiKeys || {
+                                google: '',
+                                openai: '',
+                                anthropic: '',
+                                mistral: ''
+                            }
+                        });
+                    } catch (error) {
+                        console.error('Failed to parse stored UI state - using defaults');
+                    }
+                }
+                
+                // Load chat history from IndexedDB
+                const chats = await chatDB.getAllChats();
+                setChatHistory(chats);
+                
+                // Note: Messages will be loaded automatically by the activeChatId useEffect
+                // when storedActiveChatId is set above
+                
+                console.log('Loaded app state from IndexedDB and localStorage');
             } catch (error) {
-                console.error('Failed to parse stored page state:', error);
-                // Fall back to just loading chat history for backward compatibility
+                console.error('Failed to load app state:', error);
+                // Fallback to localStorage for backward compatibility
                 const storedHistory = localStorage.getItem('chatHistory');
                 if (storedHistory) {
-                    setChatHistory(JSON.parse(storedHistory));
+                    try {
+                        setChatHistory(JSON.parse(storedHistory));
+                    } catch (parseError) {
+                        console.error('Failed to parse localStorage fallback');
+                    }
                 }
+            } finally {
+                // Always allow subsequent saves even if load partially failed
+                setIsLoaded(true);
             }
-        } else {
-            // Backward compatibility
-            const storedHistory = localStorage.getItem('chatHistory');
-            if (storedHistory) {
-                setChatHistory(JSON.parse(storedHistory));
-            }
-        }
+        };
         
+        loadAppState();
         fetchLearningResources();
         fetchSystemPrompts();
     }, []);
 
-    // Save complete page state to localStorage whenever relevant state changes
-    useEffect(() => {
-        const pageState = {
-            chatHistory,
-            messages,
-            activeChatId,
-            selectedResource,
-            resourceContent,
-            isChatCollapsed,
-            isResourceCollapsed,
-            selectedSystemPrompt
-        };
-        
-        localStorage.setItem('pageState', JSON.stringify(pageState));
-        
-        // Keep the old chatHistory item for backward compatibility
-        if (chatHistory.length > 0) {
-            localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
-        }
-    }, [chatHistory, messages, activeChatId, selectedResource, 
-        resourceContent, isChatCollapsed, isResourceCollapsed, selectedSystemPrompt]);
 
+    // Save UI state to localStorage (excluding chat data which goes to IndexedDB)
     useEffect(() => {
-        // Auto-scroll to the bottom of the chat log
-        if (chatLogRef.current) {
-            chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
+        if (!isLoaded) return; // Don't save until the initial load is complete
+        const timeoutId = setTimeout(() => {
+            localStorage.setItem('pageState', JSON.stringify({
+                activeChatId,
+                selectedResource,
+                resourceContent,
+                isChatCollapsed,
+                isResourceCollapsed,
+                selectedSystemPrompt,
+                llmSettings
+            }));
+            if (chatHistory.length > 0) {
+                localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+            }
+        }, 100);
+        return () => clearTimeout(timeoutId);
+    }, [isLoaded, chatHistory, activeChatId, selectedResource, resourceContent, isChatCollapsed, isResourceCollapsed, selectedSystemPrompt, llmSettings]);
+
+    // This effect is the single source of truth for loading chat messages.
+    // It runs whenever the active chat ID changes.
+    useEffect(() => {
+        const loadMessages = async () => {
+            if (activeChatId) {
+                setMessagesLoaded(false);
+                try {
+                    const msgs = await chatDB.getChatMessages(activeChatId);
+                    setMessages(msgs);
+                } catch (error) {
+                    console.error('Failed to load chat messages:', error);
+                    setMessages([]);
+                } finally {
+                    setMessagesLoaded(true);
+                }
+            } else {
+                setMessages([]);
+                setMessagesLoaded(true);
+            }
+        };
+        loadMessages();
+    }, [activeChatId]);
+
+    // Auto-scroll chat log to bottom on new message, but only if user is already at the bottom
+    useEffect(() => {
+        const chatLog = chatLogRef.current;
+        if (!chatLog) return;
+
+        // A flag to check if the user was at the bottom before the new message was added.
+        // A 30px threshold is added for flexibility.
+        const wasAtBottom = chatLog.scrollHeight - chatLog.clientHeight <= chatLog.scrollTop + 30;
+
+        if (wasAtBottom) {
+            // Use requestAnimationFrame to ensure the scroll happens after the DOM has been updated.
+            requestAnimationFrame(() => {
+                chatLog.scrollTop = chatLog.scrollHeight;
+            });
         }
     }, [messages]);
+
+    // Abort any in-flight streaming fetch on unmount to prevent stray rejections
+    useEffect(() => {
+        return () => {
+            try { inflightControllerRef.current?.abort(); } catch {}
+        };
+    }, []);
+
+    // Dev-only: prevent UI-breaking overlay on unhelpful unhandled rejections (e.g., [object Event])
+    useEffect(() => {
+        if (process.env.NODE_ENV !== 'development') return;
+        const handler = (event) => {
+            try {
+                const reason = event?.reason;
+                // Suppress overlay for non-Error rejections that provide no useful stack (e.g., Event objects)
+                if (reason instanceof Event || (reason && typeof reason === 'object' && reason.type && !reason.stack)) {
+                    console.warn('Suppressed unhandled rejection:', reason);
+                    event.preventDefault();
+                }
+            } catch (e) {
+                // no-op
+            }
+        };
+        window.addEventListener('unhandledrejection', handler);
+        return () => window.removeEventListener('unhandledrejection', handler);
+    }, []);
 
     const fetchLearningResources = async () => {
         try {
@@ -158,22 +272,41 @@ export default function Home() {
             setIsChatCollapsed(prev => !prev);
         } else {
             // Otherwise, select the new chat and make sure it's visible.
-            const chat = chatHistory.find(c => c.id === id);
-            if (chat) {
-                setActiveChatId(id);
-                setMessages(chat.messages);
-                setSelectedResource(null); // Deselect any resource
-                setResourceContent('');
-                setIsChatCollapsed(false); // Ensure chat is visible
-            }
+            setActiveChatId(id);
+            setSelectedResource(null); // Deselect any resource
+            setResourceContent('');
+            setIsChatCollapsed(false); // Ensure chat is visible
         }
     };
 
-    const handleDeleteChat = (id) => {
-        setChatHistory(prev => prev.filter(chat => chat.id !== id));
-        if (activeChatId === id) {
-            setActiveChatId(null);
-            setMessages([]);
+    const handleDeleteChat = async (id) => {
+        try {
+            // Delete from IndexedDB
+            await chatDB.deleteChat(id);
+            
+            // Update React state
+            setChatHistory(prev => prev.filter(chat => chat.id !== id));
+            
+            if (activeChatId === id) {
+                setActiveChatId(null);
+                setMessages([]);
+            }
+        } catch (error) {
+            console.error('Failed to delete chat:', error);
+        }
+    };
+
+    const handleRenameChat = async (id, newTitle) => {
+        try {
+            // Update title in IndexedDB
+            await chatDB.updateChatTitle(id, newTitle);
+            
+            // Update React state
+            setChatHistory(prev => prev.map(chat =>
+                chat.id === id ? { ...chat, title: newTitle } : chat
+            ));
+        } catch (error) {
+            console.error('Failed to rename chat:', error);
         }
     };
     
@@ -182,33 +315,98 @@ export default function Home() {
         localStorage.setItem('selectedSystemPrompt', promptName);
     };
     
-    const handleResetPageState = () => {
+    const handleResetPageState = async () => {
         // Confirm with the user before resetting
         if (window.confirm('Are you sure you want to reset the page state? This will clear all chats and selections.')) {
-            // Clear all state
-            setMessages([]);
-            setInput('');
-            setChatHistory([]);
-            setActiveChatId(null);
-            setSelectedResource(null);
-            setResourceContent('');
-            setIsChatCollapsed(true); // Chat panel minimized after reset
-            setIsResourceCollapsed(false);
-            setSelectedSystemPrompt('system-prompt');
-            
-            // Clear localStorage
-            localStorage.removeItem('pageState');
-            localStorage.removeItem('chatHistory');
-            localStorage.removeItem('selectedSystemPrompt');
+            try {
+                // Clear IndexedDB
+                await chatDB.clearAllData();
+                
+                // Clear all state
+                setMessages([]);
+                setInput('');
+                setChatHistory([]);
+                setActiveChatId(null);
+                setSelectedResource(null);
+                setResourceContent('');
+                setIsChatCollapsed(true); // Chat panel minimized after reset
+                setIsResourceCollapsed(false);
+                setSelectedSystemPrompt('Default');
+                setLlmSettings({ 
+                    provider: 'google', 
+                    model: '', 
+                    apiKeys: {
+                        google: '',
+                        openai: '',
+                        anthropic: '',
+                        mistral: ''
+                    }
+                });
+                
+                // Clear localStorage
+                localStorage.removeItem('pageState');
+                localStorage.removeItem('chatHistory');
+                localStorage.removeItem('selectedSystemPrompt');
             
             // Notify the user
             alert('Page state has been reset successfully.');
+            } catch (error) {
+                console.error('Failed to reset page state:', error);
+                alert('Failed to reset page state. Please try again.');
+            }
         }
     };
 
-    const handleDownload = () => {
+    const handleUpdateLlmSettings = (partial) => {
+        setLlmSettings(prev => {
+            const newSettings = { ...prev, ...partial };
+            if (partial.apiKey !== undefined) {
+                newSettings.apiKeys = {
+                    ...prev.apiKeys,
+                    [prev.provider]: partial.apiKey
+                };
+                // apiKey is a signal to update a specific provider's key, not a top-level field
+                delete newSettings.apiKey;
+            }
+            return newSettings;
+        });
+    };
+
+    const handleDownload = (format = 'json') => {
+        if (format === 'md') {
+            if (!activeChatId) {
+                alert('No active chat to export.');
+                return;
+            }
+            const activeChat = chatHistory.find(c => c.id === activeChatId);
+            if (!activeChat) {
+                alert('No active chat to export.');
+                return;
+            }
+            const lines = [];
+            lines.push(`# ${activeChat.title}`);
+            lines.push('');
+            for (const m of messages) {
+                lines.push(`## ${m.role === 'assistant' ? 'Assistant' : 'User'}`);
+                lines.push('');
+                lines.push(m.content || '');
+                lines.push('');
+            }
+            const md = lines.join('\n');
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chat-${activeChat.id}.md`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            return;
+        }
+
+        // Default JSON export
         if (!activeChatId) {
-            // If no chat is active, download the entire history
             if (chatHistory.length === 0) {
                 alert("No chat history to download.");
                 return;
@@ -223,7 +421,6 @@ export default function Home() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         } else {
-            // If a chat is active, download only that chat
             const activeChat = chatHistory.find(chat => chat.id === activeChatId);
             if (activeChat) {
                 const blob = new Blob([JSON.stringify(activeChat, null, 2)], { type: 'application/json' });
@@ -239,46 +436,218 @@ export default function Home() {
         }
     };
 
-    const handleUpload = (event) => {
+    // Helper to parse Markdown chat exports generated by this app
+    function parseMarkdownChat(mdText) {
+        const text = (mdText || '').replace(/\r\n/g, '\n');
+        const lines = text.split('\n');
+        let idx = 0;
+        let title = 'Imported Chat';
+        if (lines[0] && lines[0].startsWith('# ')) {
+            title = lines[0].slice(2).trim() || title;
+            idx = 1;
+        }
+        const messages = [];
+        let currentRole = null;
+        let buffer = [];
+        const flush = () => {
+            if (currentRole) {
+                const content = buffer.join('\n').trim();
+                if (content) messages.push({ role: currentRole, content });
+            }
+            buffer = [];
+        };
+        for (; idx < lines.length; idx++) {
+            const line = lines[idx];
+            const m = line.match(/^##\s*(User|Assistant)\s*$/i);
+            if (m) {
+                flush();
+                currentRole = m[1].toLowerCase() === 'user' ? 'user' : 'assistant';
+                buffer = [];
+            } else {
+                buffer.push(line);
+            }
+        }
+        flush();
+        return { title, messages };
+    }
+
+    const handleUpload = async (event) => {
         const file = event.target.files[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
+        try {
+            const text = await file.text();
+
+            // Try JSON import first
+            let parsed;
             try {
-                const uploadedHistory = JSON.parse(e.target.result);
-                // Basic validation to see if it's a single chat or all history
-                if (Array.isArray(uploadedHistory) && uploadedHistory.every(c => c.id && c.title && c.messages)) {
-                    // It's likely an array of chats (all history)
-                    setChatHistory(prev => {
-                        const existingIds = new Set(prev.map(c => c.id));
-                        const newChats = uploadedHistory.filter(c => !existingIds.has(c.id));
-                        return [...prev, ...newChats];
-                    });
-                } else if (uploadedHistory.id && uploadedHistory.title && uploadedHistory.messages) {
-                    // It's likely a single chat object
-                    setChatHistory(prev => {
-                        // Avoid duplicates
-                        if (prev.some(c => c.id === uploadedHistory.id)) {
-                            return prev;
+                parsed = JSON.parse(text);
+            } catch {}
+
+            if (parsed) {
+                // Detect array of chats
+                if (Array.isArray(parsed) && parsed.every(c => c && c.title && Array.isArray(c.messages))) {
+                    const importedChats = [];
+                    for (const c of parsed) {
+                        const newId = await chatDB.createChat(
+                            c.title || 'Imported Chat',
+                            selectedSystemPrompt,
+                            llmSettings.provider,
+                            (llmSettings.models?.[llmSettings.provider] || '')
+                        );
+                        for (const m of c.messages) {
+                            if (m && m.content) {
+                                const role = m.role === 'assistant' ? 'assistant' : 'user';
+                                await chatDB.addMessage(newId, role, m.content);
+                            }
                         }
-                        return [...prev, uploadedHistory];
-                    });
-                } else {
-                    alert("Invalid chat history file format.");
+                        const now = new Date();
+                        importedChats.push({
+                            id: newId,
+                            title: c.title || 'Imported Chat',
+                            created: now,
+                            updated: now,
+                            systemPrompt: selectedSystemPrompt,
+                            provider: llmSettings.provider,
+                            model: (llmSettings.models?.[llmSettings.provider] || '')
+                        });
+                    }
+                    setChatHistory(prev => [...prev, ...importedChats]);
+                    // Do not auto-activate when importing multiple chats
+                    return;
                 }
-            } catch (error) {
-                console.error("Error parsing uploaded file:", error);
-                alert("Failed to upload history. The file might be corrupted or in the wrong format.");
+
+                // Detect single chat object
+                if (parsed && parsed.title && Array.isArray(parsed.messages)) {
+                    const newId = await chatDB.createChat(
+                        parsed.title || 'Imported Chat',
+                        selectedSystemPrompt,
+                        llmSettings.provider,
+                        (llmSettings.models?.[llmSettings.provider] || '')
+                    );
+                    for (const m of parsed.messages) {
+                        if (m && m.content) {
+                            const role = m.role === 'assistant' ? 'assistant' : 'user';
+                            await chatDB.addMessage(newId, role, m.content);
+                        }
+                    }
+                    const now = new Date();
+                    const newChat = {
+                        id: newId,
+                        title: parsed.title || 'Imported Chat',
+                        created: now,
+                        updated: now,
+                        systemPrompt: selectedSystemPrompt,
+                        provider: llmSettings.provider,
+                        model: (llmSettings.models?.[llmSettings.provider] || '')
+                    };
+                    setChatHistory(prev => [...prev, newChat]);
+                    setActiveChatId(newId);
+                    setIsChatCollapsed(false);
+                    return;
+                }
             }
+
+            // Fallback: try Markdown import
+            const isMd = /\.md|\.markdown$/i.test(file.name) || (file.type || '').includes('markdown') || text.trim().startsWith('#');
+            if (isMd) {
+                const { title, messages: mdMessages } = parseMarkdownChat(text);
+                if (!mdMessages || mdMessages.length === 0) {
+                    alert('No messages found in the Markdown file.');
+                } else {
+                    const newTitle = title || file.name.replace(/\.(md|markdown)$/i, '');
+                    const newId = await chatDB.createChat(
+                        newTitle,
+                        selectedSystemPrompt,
+                        llmSettings.provider,
+                        (llmSettings.models?.[llmSettings.provider] || '')
+                    );
+                    for (const m of mdMessages) {
+                        await chatDB.addMessage(newId, m.role === 'assistant' ? 'assistant' : 'user', m.content);
+                    }
+                    const now = new Date();
+                    const newChat = {
+                        id: newId,
+                        title: newTitle,
+                        created: now,
+                        updated: now,
+                        systemPrompt: selectedSystemPrompt,
+                        provider: llmSettings.provider,
+                        model: (llmSettings.models?.[llmSettings.provider] || '')
+                    };
+                    setChatHistory(prev => [...prev, newChat]);
+                    setActiveChatId(newId);
+                    setIsChatCollapsed(false);
+                    return;
+                }
+            }
+
+            alert('Invalid chat file. Provide a JSON export or Markdown export created by this app.');
+        } catch (error) {
+            console.error('Error importing chat file:', error);
+            alert('Failed to import chat file. The file might be corrupted or in the wrong format.');
+        } finally {
+            // Reset file input so the same file can be uploaded again
+            event.target.value = null;
+        }
+    };
+
+    // Map technical errors to user-friendly messages (no raw error echo)
+    const mapErrorToUserMessage = (error) => {
+        let userErrorMessage = "Sorry, I encountered an error";
+        const em = (error && error.message) ? error.message : '';
+        if (em.includes('API request failed with status 401')) {
+            userErrorMessage = "Error: Authentication failed. Please check your API key in the LLM Settings.";
+        } else if (em.includes('API request failed with status 403')) {
+            userErrorMessage = "Error: Access forbidden. Your API key may not have the required permissions.";
+        } else if (em.includes('API request failed with status 429') || em.includes('Too many requests')) {
+            userErrorMessage = "Error: Rate limit exceeded. Please wait a moment before trying again.";
+        } else if (em.includes('API request failed with status 400')) {
+            userErrorMessage = "Error: Invalid request. Please check your model selection and try again.";
+        } else if (em.includes('API request failed with status 413')) {
+            userErrorMessage = "Error: Request too large. Your message or conversation history is too long.";
+        } else if (em.includes('API request failed with status 500') || em.includes('Internal Server Error')) {
+            userErrorMessage = "Error: Server error. The API service is experiencing issues. Please try again later.";
+        } else if (em.includes('Missing API key')) {
+            userErrorMessage = "Error: Missing API key. Please add your API key in the LLM Settings panel.";
+        } else if (em.includes('Unsupported provider')) {
+            userErrorMessage = "Error: Unsupported provider. Please select a valid LLM provider in Settings.";
+        } else if (em.includes('No response received')) {
+            userErrorMessage = "Error: No response received from the API. Please check your API key and model selection.";
+        } else if (em.includes('fetch')) {
+            userErrorMessage = "Error: Network error. Please check your internet connection and try again.";
+        } else {
+            // Generic fallback; do NOT echo raw error.message into the chat
+            userErrorMessage = "Error: An unexpected error occurred. Please try again.";
+        }
+        return userErrorMessage;
+    };
+
+    // Build request payload consistently
+    const buildPayload = (promptText, priorMessages) => {
+        const payload = {
+            prompt: promptText,
+            history: priorMessages.map(m => ({ role: m.role, content: m.content })),
+            systemPrompt: selectedSystemPrompt,
+            provider: llmSettings.provider,
+            apiKey: llmSettings.apiKeys[llmSettings.provider],
+            model: (llmSettings.models?.[llmSettings.provider] || '')
         };
-        reader.readAsText(file);
-        // Reset file input so the same file can be uploaded again
-        event.target.value = null;
+        if (!llmSettings?.useProviderDefaultTemperature && typeof llmSettings?.temperature === 'number') {
+            payload.temperature = llmSettings.temperature;
+        }
+        return payload;
     };
 
     const handleSendMessage = async () => {
         if (!input.trim()) return;
+        if (activeChatId && !messagesLoaded) {
+            alert('Loading chat messages, please try again in a moment.');
+            return;
+        }
+
+        // Clear any previous retry state when starting a new message
+        retryStateRef.current = null;
 
         const userMessage = { role: 'user', content: input };
         const newMessages = [...messages, userMessage];
@@ -289,18 +658,62 @@ export default function Home() {
         let currentChatId = activeChatId;
 
         try {
+            // Abort any prior inflight request before starting a new one
+            try { inflightControllerRef.current?.abort(); } catch {}
+            inflightControllerRef.current = new AbortController();
+            
+            // If no active chat, create a new one in IndexedDB
+            if (!currentChatId) {
+                const newTitle = input.substring(0, 50);
+                currentChatId = await chatDB.createChat(
+                    newTitle,
+                    selectedSystemPrompt,
+                    llmSettings.provider,
+                    (llmSettings.models?.[llmSettings.provider] || '')
+                );
+                
+                // Save user message to IndexedDB BEFORE setting active chat ID
+                // This prevents race condition with the activeChatId useEffect
+                await chatDB.addMessage(currentChatId, userMessage.role, userMessage.content);
+                
+                // Now it's safe to set the active chat ID, which will trigger useEffect to load messages
+                setActiveChatId(currentChatId);
+                
+                // Update chat history in React state
+                const now = new Date();
+                const newChat = { id: currentChatId, title: newTitle, created: now, updated: now, systemPrompt: selectedSystemPrompt, provider: llmSettings.provider, model: (llmSettings.models?.[llmSettings.provider] || '') };
+                setChatHistory(prev => [...prev, newChat]);
+            } else {
+                // For existing chats, save user message to IndexedDB
+                await chatDB.addMessage(currentChatId, userMessage.role, userMessage.content);
+            }
+            
+            // Build payload and optionally omit temperature to use provider defaults
+            const payload = buildPayload(input, messages);
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    prompt: input,
-                    history: messages.map(m => ({
-                        role: m.role === 'user' ? 'user' : 'model',
-                        parts: [{ text: m.content }]
-                    })),
-                    systemPrompt: selectedSystemPrompt
-                }),
+                body: JSON.stringify(payload),
+                signal: inflightControllerRef.current.signal,
             });
+
+            // Check for HTTP errors before processing response
+            if (!response.ok) {
+                let errorMessage = `API request failed with status ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    if (errorData.error) {
+                        errorMessage = errorData.error;
+                    } else if (errorData.message) {
+                        errorMessage = errorData.message;
+                    }
+                } catch (e) {
+                    // If we can't parse JSON, use the status text
+                    errorMessage = `API request failed: ${response.status} ${response.statusText}`;
+                }
+                throw new Error(errorMessage);
+            }
 
             if (!response.body) {
                 throw new Error("Response body is null");
@@ -309,60 +722,124 @@ export default function Home() {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let aiResponseText = '';
-            
+
             // Add a placeholder for the AI response
             setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
+            // Robust SSE parsing with a rolling buffer to handle chunk-splitting
+            let buffer = '';
+            const applyEvent = (eventText) => {
+                // Normalize CRLF and accumulate any 'data:' lines per SSE spec
+                const lines = eventText.replace(/\r/g, '').split('\n');
+                const dataLines = [];
+                for (const raw of lines) {
+                    if (raw.startsWith('data:')) {
+                        dataLines.push(raw.slice(5).trimStart());
+                    }
+                }
+                if (dataLines.length === 0) return;
+                const payload = dataLines.join('\n');
+                let json;
+                try {
+                    json = JSON.parse(payload);
+                } catch {
+                    // Not valid JSON; ignore this event
+                    return;
+                }
+                if (json.type === 'chunk' && typeof json.text === 'string') {
+                    aiResponseText += json.text;
+                    setMessages(prev => {
+                        const updated = [...prev];
+                        // Ensure there's an assistant placeholder at the end; avoid overwriting a user message
+                        if (updated.length === 0 || updated[updated.length - 1].role !== 'assistant') {
+                            updated.push({ role: 'assistant', content: '' });
+                        }
+                        // Update the assistant message content safely
+                        updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: aiResponseText };
+                        return updated;
+                    });
+                } else if (json.type === 'error' && json.message) {
+                    throw new Error(json.message);
+                } else if (json.type === 'done') {
+                    // no-op; finalization will occur after stream ends
+                }
+            };
+
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n\n');
-
-                for (const line of lines) {
-                    if (line.startsWith('data:')) {
-                        try {
-                            const json = JSON.parse(line.substring(5));
-                            if (json.type === 'chunk' && json.text) {
-                                aiResponseText += json.text;
-                                setMessages(prev => {
-                                    const lastMsgIndex = prev.length - 1;
-                                    const updatedMessages = [...prev];
-                                    updatedMessages[lastMsgIndex] = { ...updatedMessages[lastMsgIndex], content: aiResponseText };
-                                    return updatedMessages;
-                                });
-                            } else if (json.type === 'error') {
-                                throw new Error(json.message);
-                            }
-                        } catch (e) {
-                            // Ignore incomplete JSON
-                        }
+                if (done) {
+                    // Process any residual buffered event (no trailing blank line)
+                    if (buffer.trim().length > 0) {
+                        applyEvent(buffer);
                     }
+                    break;
+                }
+                buffer += decoder.decode(value, { stream: true });
+
+                // Extract complete SSE events separated by blank lines
+                let sepIndex;
+                while ((sepIndex = buffer.indexOf('\n\n')) !== -1) {
+                    const eventBlock = buffer.slice(0, sepIndex);
+                    buffer = buffer.slice(sepIndex + 2);
+                    applyEvent(eventBlock);
                 }
             }
             
-            const finalMessages = [...newMessages, { role: 'assistant', content: aiResponseText }];
-            
-            if (currentChatId) {
-                // Update existing chat
-                setChatHistory(prev => prev.map(chat =>
-                    chat.id === currentChatId ? { ...chat, messages: finalMessages } : chat
-                ));
-            } else {
-                // Create a new chat
-                const newId = Date.now().toString();
-                const newTitle = input.substring(0, 30);
-                const newChat = { id: newId, title: newTitle, messages: finalMessages };
-                setChatHistory(prev => [...prev, newChat]);
-                setActiveChatId(newId);
+            // Check if we got any response content
+            if (!aiResponseText.trim()) {
+                throw new Error("No response received from the API. This might be due to an invalid API key, model, or service issue.");
             }
+            
+            // Save the complete AI response to IndexedDB
+            const aiMessage = { role: 'assistant', content: aiResponseText };
+            await chatDB.addMessage(currentChatId, aiMessage.role, aiMessage.content);
+            
+            // Update chat title if it's a new chat and we have a meaningful response
+            if (aiResponseText.length > 0) {
+                const existingChat = chatHistory.find(chat => chat.id === currentChatId);
+                const placeholderTitle = input.substring(0, 50);
+                if (existingChat && existingChat.title === placeholderTitle) {
+                    const newTitle = input.substring(0, 50) + (input.length > 50 ? '...' : '');
+                    await chatDB.updateChatTitle(currentChatId, newTitle);
+                    setChatHistory(prev => prev.map(chat =>
+                        chat.id === currentChatId ? { ...chat, title: newTitle } : chat
+                    ));
+                }
+            }
+            
+            // Clear retry state on successful completion
+            retryStateRef.current = null;
+            // No-op: community prompt support removed.
 
         } catch (error) {
-            console.error("API error:", error);
-            setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, I encountered an error: ${error.message}` }]);
+            if (error?.name === 'AbortError') {
+                // ignore aborted fetch
+                return;
+            }
+            
+            const userErrorMessage = mapErrorToUserMessage(error);
+            
+            console.error("API error occurred during chat request:", error);
+            
+            // Save request for retry on failure
+            const retryPayload = buildPayload(input, messages, undefined);
+            retryStateRef.current = { chatId: currentChatId, payload: retryPayload };
+            
+            // Add error message to chat
+            const errorMessage = { role: 'assistant', content: userErrorMessage };
+            setMessages(prev => [...prev, errorMessage]);
+            
+            // Save error message to IndexedDB if we have a chat
+            if (currentChatId) {
+                try {
+                    await chatDB.addMessage(currentChatId, errorMessage.role, errorMessage.content);
+                } catch (dbError) {
+                    console.error('Failed to save error message to database:', dbError);
+                }
+            }
         } finally {
             setIsLoading(false);
+            inflightControllerRef.current = null;
         }
     };
 
@@ -378,17 +855,29 @@ export default function Home() {
                 learningResources={learningResources}
                 onSelectResource={handleSelectResource}
                 onDeleteChat={handleDeleteChat}
+                onRenameChat={handleRenameChat}
                 systemPrompts={systemPrompts}
                 selectedSystemPrompt={selectedSystemPrompt}
                 onSelectSystemPrompt={handleSelectSystemPrompt}
                 onResetPageState={handleResetPageState}
+                llmSettings={llmSettings}
+                onUpdateLlmSettings={handleUpdateLlmSettings}
             />
             <main id="main-content">
                 {/* Show landing page when both chat and resources are collapsed */}
                 {isChatCollapsed && (!selectedResource || isResourceCollapsed) ? (
                     <div className="landing-page-centered">
                         <h1>Welcome to The AI Cognition Protocol</h1>
-                        <p>Select a system prompt from the sidebar to customize your AI experience.</p>
+                        <div className="landing-intro">
+                            <p><strong>A Framework for Your Mind. A Commitment to Your Safety.</strong></p>
+                            <p>This is a space for curiosity and growth. To ensure your journey is empowering, we operate on a few core beliefs.</p>
+                            <ul>
+                                <li><strong>Growth over Grades.</strong> This is a practice, not a performance.</li>
+                                <li><strong>You're in Control.</strong> Our tools are suggestions, not rules. You are the expert.</li>
+                                <li><strong>Clarity is Kindness.</strong> We're transparent about our methods and the fact that self-reflection can be challenging.</li>
+                            </ul>
+                            <p><em><strong>Please Note:</strong> These tools are for educational and self-development purposes. They are not a substitute for professional therapy or medical advice. Please seek help from a qualified professional if you are in distress.</em></p>
+                        </div>
                         <p>Currently using: <strong>{selectedSystemPrompt.replace(/-/g, ' ')}</strong></p>
                         
                         <div className="panel-controls">
@@ -436,6 +925,15 @@ export default function Home() {
                             >
                                 Problem-solving assistance
                             </button>
+                            <a 
+                                href="https://ko-fi.com/cognitivearchitect"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="landing-option-btn"
+                                title="Support this project on Ko-fi"
+                            >
+                                ☕ Support this project on Ko-fi
+                            </a>
                         </div>
                     </div>
                 ) : (
@@ -479,9 +977,151 @@ export default function Home() {
                                         placeholder="Type your message..."
                                         disabled={isLoading}
                                     />
-                                    <button onClick={handleSendMessage} disabled={isLoading}>
+                                    <button onClick={handleSendMessage} disabled={isLoading || (activeChatId && !messagesLoaded)}>
                                         {isLoading ? 'Thinking...' : 'Send'}
                                     </button>
+                                    {isLoading && (
+                                        <button onClick={() => { try { inflightControllerRef.current?.abort(); } catch {} }}>
+                                            Stop
+                                        </button>
+                                    )}
+                                    {!isLoading && retryStateRef.current && (
+                                        <button onClick={async () => {
+                                            const state = retryStateRef.current;
+                                            if (!state || !state.chatId || !state.payload) return;
+                                            setIsLoading(true);
+                                            try {
+                                                try { inflightControllerRef.current?.abort(); } catch {}
+                                                inflightControllerRef.current = new AbortController();
+
+                                                const response = await fetch('/api/chat', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify(state.payload),
+                                                    signal: inflightControllerRef.current.signal,
+                                                });
+
+                                                if (!response.ok) {
+                                                    let errorMessage = `API request failed with status ${response.status}`;
+                                                    try {
+                                                        const errorData = await response.json();
+                                                        if (errorData.error) {
+                                                            errorMessage = errorData.error;
+                                                        } else if (errorData.message) {
+                                                            errorMessage = errorData.message;
+                                                        }
+                                                    } catch (e) {
+                                                        errorMessage = `API request failed: ${response.status} ${response.statusText}`;
+                                                    }
+                                                    throw new Error(errorMessage);
+                                                }
+
+                                                if (!response.body) {
+                                                    throw new Error("Response body is null");
+                                                }
+
+                                                const reader = response.body.getReader();
+                                                const decoder = new TextDecoder();
+                                                let aiResponseText = '';
+
+                                                // Add a placeholder for the AI response
+                                                setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
+                                                // Robust SSE parsing with a rolling buffer to handle chunk-splitting
+                                                let buffer = '';
+                                                const applyEvent = (eventText) => {
+                                                    // Normalize CRLF and accumulate any 'data:' lines per SSE spec
+                                                    const lines = eventText.replace(/\r/g, '').split('\n');
+                                                    const dataLines = [];
+                                                    for (const raw of lines) {
+                                                        if (raw.startsWith('data:')) {
+                                                            dataLines.push(raw.slice(5).trimStart());
+                                                        }
+                                                    }
+                                                    if (dataLines.length === 0) return;
+                                                    const payload = dataLines.join('\n');
+                                                    let json;
+                                                    try {
+                                                        json = JSON.parse(payload);
+                                                    } catch {
+                                                        // Not valid JSON; ignore this event
+                                                        return;
+                                                    }
+                                                    if (json.type === 'chunk' && typeof json.text === 'string') {
+                                                        aiResponseText += json.text;
+                                                        setMessages(prev => {
+                                                            const updated = [...prev];
+                                                            // Ensure there's an assistant placeholder at the end; avoid overwriting a user message
+                                                            if (updated.length === 0 || updated[updated.length - 1].role !== 'assistant') {
+                                                                updated.push({ role: 'assistant', content: '' });
+                                                            }
+                                                            // Update the assistant message content safely
+                                                            updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: aiResponseText };
+                                                            return updated;
+                                                        });
+                                                    } else if (json.type === 'error' && json.message) {
+                                                        throw new Error(json.message);
+                                                    } else if (json.type === 'done') {
+                                                        // no-op
+                                                    }
+                                                };
+
+                                                while (true) {
+                                                    const { done, value } = await reader.read();
+                                                    if (done) {
+                                                        // Process any residual buffered event (no trailing blank line)
+                                                        if (buffer.trim().length > 0) {
+                                                            applyEvent(buffer);
+                                                        }
+                                                        break;
+                                                    }
+                                                    buffer += decoder.decode(value, { stream: true });
+
+                                                    // Extract complete SSE events separated by blank lines
+                                                    let sepIndex;
+                                                    while ((sepIndex = buffer.indexOf('\n\n')) !== -1) {
+                                                        const eventBlock = buffer.slice(0, sepIndex);
+                                                        buffer = buffer.slice(sepIndex + 2);
+                                                        applyEvent(eventBlock);
+                                                    }
+                                                }
+
+                                                // Check if we got any response content
+                                                if (!aiResponseText.trim()) {
+                                                    throw new Error("No response received from the API. This might be due to an invalid API key, model, or service issue.");
+                                                }
+
+                                                // Save the complete AI response to IndexedDB
+                                                const aiMessage = { role: 'assistant', content: aiResponseText };
+                                                await chatDB.addMessage(state.chatId, aiMessage.role, aiMessage.content);
+
+                                                // Clear retry state on success
+                                                retryStateRef.current = null;
+                                            } catch (error) {
+                                                if (error?.name === 'AbortError') {
+                                                    return;
+                                                }
+
+                                                const userErrorMessage = mapErrorToUserMessage(error);
+
+                                                console.error("API error occurred during retry chat request:", error);
+
+                                                const errorMessage = { role: 'assistant', content: userErrorMessage };
+                                                setMessages(prev => [...prev, errorMessage]);
+
+                                                try {
+                                                    await chatDB.addMessage(state.chatId, errorMessage.role, errorMessage.content);
+                                                } catch (dbError) {
+                                                    console.error('Failed to save error message to database (retry):', dbError);
+                                                }
+                                            } finally {
+                                                setIsLoading(false);
+                                                inflightControllerRef.current = null;
+                                            }
+                                        }}>
+                                            Retry
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         )}

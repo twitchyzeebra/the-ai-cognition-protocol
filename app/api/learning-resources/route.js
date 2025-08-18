@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
     try {
         const postsDirectory = path.join(process.cwd(), 'learning-resources');
-        const filenames = fs.readdirSync(postsDirectory);
+        const filenames = fs.readdirSync(postsDirectory).filter((f) => f.toLowerCase().endsWith('.md'));
 
         const resources = filenames.map((filename) => {
             const slug = filename.replace(/\.md$/, '');

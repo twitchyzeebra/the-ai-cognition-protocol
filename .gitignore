@@ -46,3 +46,6 @@ dev-server.js
 
 #Copilot Instructions and other files
 .github/
+
+#Encrypt-prompt Utility (only used to make raw prompts into encrypted, functional duplicate in chat.js)
+encrypt-prompt.js

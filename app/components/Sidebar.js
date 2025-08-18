@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import './Sidebar.css';
+import { useEffect, useState } from 'react';
 
 export default function Sidebar({ 
     history, 
@@ -9,20 +8,130 @@ export default function Sidebar({
     onSelectChat, 
     activeChatId,
     onDownload,
+    onExportMarkdown,
     onUpload,
     learningResources,
     onSelectResource,
     onDeleteChat,
+    onRenameChat,
     systemPrompts,
     selectedSystemPrompt,
     onSelectSystemPrompt,
-    onResetPageState
+    onResetPageState,
+    llmSettings,
+    onUpdateLlmSettings
 }) {
+    // UI state (with localStorage persistence)
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isHistoryVisible, setIsHistoryVisible] = useState(true);
     const [isResourcesVisible, setIsResourcesVisible] = useState(true);
     const [isPromptsVisible, setIsPromptsVisible] = useState(true);
+    const [isSettingsVisible, setIsSettingsVisible] = useState(true);
+    const [isSmall, setIsSmall] = useState(false);
+
+    // Enhancements
+    const [historyQuery, setHistoryQuery] = useState('');
     const [confirmingDelete, setConfirmingDelete] = useState(null);
+    const [renamingChat, setRenamingChat] = useState(null);
+    const [renameValue, setRenameValue] = useState('');
+    const [settingsMenuOpen, setSettingsMenuOpen] = useState(null);
+
+    const providerModelPresets = {
+        google: [
+            'gemini-2.5-pro',
+            'gemini-2.0-flash',
+            'gemini-1.5-pro'
+        ],
+        openai: [
+            'gpt-4o',
+            'gpt-4o-mini',
+            'o4-mini'
+        ],
+        anthropic: [
+            'claude-3-5-sonnet-latest',
+            'claude-3-5-haiku-latest',
+            'claude-3-opus-latest'
+        ],
+        mistral: [
+            'mistral-large-latest',
+            'open-mistral-nemo',
+            'open-mixtral-8x7b',
+            'codestral-latest'
+        ],
+    };
+
+    // Load persisted UI state on mount
+    useEffect(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem('sidebarState') || '{}');
+            if (typeof saved.isCollapsed === 'boolean') setIsCollapsed(saved.isCollapsed);
+            if (typeof saved.isHistoryVisible === 'boolean') setIsHistoryVisible(saved.isHistoryVisible);
+            if (typeof saved.isResourcesVisible === 'boolean') setIsResourcesVisible(saved.isResourcesVisible);
+            if (typeof saved.isPromptsVisible === 'boolean') setIsPromptsVisible(saved.isPromptsVisible);
+            if (typeof saved.isSettingsVisible === 'boolean') setIsSettingsVisible(saved.isSettingsVisible);
+            
+            // Default to collapsed on small screens if no saved preference
+            if (typeof saved.isCollapsed !== 'boolean') {
+                try {
+                    if (typeof window !== 'undefined' && window.innerWidth < 900) {
+                        setIsCollapsed(true);
+                    }
+                } catch {}
+            }
+        } catch {}
+    }, []);
+    
+    // Track small-screen state for responsive rendering
+    useEffect(() => {
+        try {
+            const update = () => {
+                if (typeof window !== 'undefined') {
+                    setIsSmall(window.innerWidth < 900);
+                }
+            };
+            update();
+            if (typeof window !== 'undefined') {
+                window.addEventListener('resize', update);
+                return () => window.removeEventListener('resize', update);
+            }
+        } catch {}
+    }, []);
+    
+    // Persist UI state whenever it changes
+    useEffect(() => {
+        const payload = {
+            isCollapsed,
+            isHistoryVisible,
+            isResourcesVisible,
+            isPromptsVisible,
+            isSettingsVisible,
+        };
+        try { localStorage.setItem('sidebarState', JSON.stringify(payload)); } catch {}
+    }, [isCollapsed, isHistoryVisible, isResourcesVisible, isPromptsVisible, isSettingsVisible]);
+
+    // Lock background scroll when the mobile drawer is open
+    useEffect(() => {
+        try {
+            if (typeof window === 'undefined') return;
+            const isSmall = window.innerWidth < 900;
+            if (isSmall && !isCollapsed) {
+                const prev = document.body.style.overflow;
+                document.body.setAttribute('data-prev-overflow', prev || '');
+                document.body.style.overflow = 'hidden';
+            } else {
+                const prev = document.body.getAttribute('data-prev-overflow') || '';
+                document.body.style.overflow = prev;
+                document.body.removeAttribute('data-prev-overflow');
+            }
+        } catch {}
+        return () => {
+            try {
+                const prev = document.body.getAttribute('data-prev-overflow') || '';
+                document.body.style.overflow = prev;
+                document.body.removeAttribute('data-prev-overflow');
+            } catch {}
+        };
+    }, [isCollapsed]);
 
     const handleToggleSidebar = () => {
         setIsCollapsed(!isCollapsed);
@@ -39,59 +148,237 @@ export default function Sidebar({
     };
 
     const handleMouseLeave = (chatId) => {
-        if (confirmingDelete === chatId) {
+        // Don't clear delete confirmation if settings menu is open
+        if (confirmingDelete === chatId && settingsMenuOpen !== chatId) {
             setConfirmingDelete(null);
         }
     };
 
+    const handleRenameClick = (e, chatId, currentTitle) => {
+        e.stopPropagation(); // Prevent chat selection
+        setRenamingChat(chatId);
+        setRenameValue(currentTitle || '');
+    };
+
+    const handleRenameSubmit = (chatId) => {
+        if (renameValue.trim() && renameValue !== history.find(chat => chat.id === chatId)?.title) {
+            onRenameChat(chatId, renameValue.trim());
+        }
+        setRenamingChat(null);
+        setRenameValue('');
+    };
+
+    const handleRenameCancel = () => {
+        setRenamingChat(null);
+        setRenameValue('');
+    };
+
+    const handleRenameKeyDown = (e, chatId) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleRenameSubmit(chatId);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            handleRenameCancel();
+        }
+    };
+
+    const handleSettingsClick = (e, chatId) => {
+        e.stopPropagation();
+        setSettingsMenuOpen(settingsMenuOpen === chatId ? null : chatId);
+    };
+
+    const handleSettingsOptionClick = (action, chatId, chatTitle) => {
+        if (action === 'rename') {
+            setSettingsMenuOpen(null);
+            handleRenameClick({ stopPropagation: () => {} }, chatId, chatTitle);
+        } else if (action === 'delete') {
+            // Don't close menu on first delete click, only close after confirmation
+            if (confirmingDelete === chatId) {
+                // Second click - actually delete and close menu
+                setSettingsMenuOpen(null);
+                onDeleteChat(chatId);
+                setConfirmingDelete(null);
+            } else {
+                // First click - just set confirmation state, keep menu open
+                setConfirmingDelete(chatId);
+            }
+        }
+    };
+
+    // Close settings menu when clicking outside, but not during delete confirmation
+    useEffect(() => {
+        const handleClickOutside = () => {
+            // Don't close menu if we're in delete confirmation mode
+            if (confirmingDelete === null) {
+                setSettingsMenuOpen(null);
+            }
+        };
+        
+        if (settingsMenuOpen) {
+            document.addEventListener('click', handleClickOutside);
+            return () => document.removeEventListener('click', handleClickOutside);
+        }
+    }, [settingsMenuOpen, confirmingDelete]);
+
+    const filteredHistory = historyQuery
+        ? history.filter((chat) => (chat.title || '').toLowerCase().includes(historyQuery.toLowerCase()))
+        : history;
+
+    const promptLabel = (p) => p.replace(/_/g, ' ').replace(/-/g, ' ');
+
     return (
         <aside id="sidebar" className={isCollapsed ? 'collapsed' : ''}>
-            <div className="sidebar-toggle" onClick={handleToggleSidebar}>
-                {isCollapsed ? '»' : '«'}
-            </div>
+            {/* Mobile backdrop to close the drawer by tapping outside */}
+            {isSmall && !isCollapsed && (
+                <button
+                    className="sidebar-backdrop"
+                    aria-label="Close sidebar"
+                    onClick={() => setIsCollapsed(true)}
+                />
+            )}
+            <button
+                className="sidebar-toggle"
+                onClick={handleToggleSidebar}
+                aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+                {isCollapsed ? '☰' : '×'}
+            </button>
+            {/* Mobile floating New Chat button */}
+            {isSmall && (
+                <button
+                    className="new-chat-fab"
+                    onClick={() => { 
+                        onNewChat(); 
+                        try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                    }}
+                    aria-label="New chat"
+                    title="New Chat"
+                >＋</button>
+            )}
             <div className="sidebar-content-wrapper">
                 <div className="sidebar-header">
                     <h2>The AI Cognition Protocol</h2>
-                    <button onClick={onNewChat} className="new-chat-btn" title="New Chat">+</button>
+                    <button
+                        onClick={() => { 
+                            onNewChat(); 
+                            try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                        }}
+                        className="new-chat-btn"
+                        title="New Chat"
+                        aria-label="New chat"
+                    >＋</button>
                 </div>
                 <div className="sidebar-content">
                     <div className="collapsible-section">
-                        <h2 onClick={() => setIsHistoryVisible(!isHistoryVisible)}>
-                            Chat History {isHistoryVisible ? '▼' : '►'}
+                        <h2 onClick={() => setIsHistoryVisible(!isHistoryVisible)} className="section-header" role="button" aria-expanded={isHistoryVisible}>
+                            <span>Chat History</span>
+                            <span className="section-meta">
+                                <span className="count-badge" aria-label={`${history.length} chats`}>{history.length}</span>
+                                <span className="chevron" aria-hidden>{isHistoryVisible ? '▼' : '►'}</span>
+                            </span>
                         </h2>
                         {isHistoryVisible && (
                             <>
+                                <div className="search-wrapper" role="search">
+                                    <input
+                                        className="search-input"
+                                        type="text"
+                                        value={historyQuery}
+                                        onChange={(e) => setHistoryQuery(e.target.value)}
+                                        placeholder="Search chats..."
+                                        aria-label="Search chats"
+                                    />
+                                    {historyQuery && (
+                                        <button
+                                            className="clear-search"
+                                            title="Clear search"
+                                            aria-label="Clear search"
+                                            onClick={() => setHistoryQuery('')}
+                                        >
+                                            ×
+                                        </button>
+                                    )}
+                                </div>
                                 <ul className="history-list">
-                                    {history.map(chat => (
+                                    {filteredHistory.map(chat => (
                                         <li 
                                             key={chat.id} 
-                                            className={`history-item ${chat.id === activeChatId ? 'active' : ''}`}
-                                            onClick={() => onSelectChat(chat.id)}
+                                            className={`history-item ${chat.id === activeChatId ? 'active' : ''} ${renamingChat === chat.id ? 'renaming' : ''}`}
+                                            onClick={renamingChat === chat.id ? undefined : () => { 
+                                                onSelectChat(chat.id); 
+                                                try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                                            }}
                                             onMouseLeave={() => handleMouseLeave(chat.id)}
                                         >
-                                            <span className="chat-title">{chat.title}</span>
-                                            <button 
-                                                className="delete-chat-btn"
-                                                onClick={(e) => handleDeleteClick(e, chat.id)}
-                                            >
-                                                {confirmingDelete === chat.id ? 'Sure?' : '🗑️'}
-                                            </button>
+                                            {renamingChat === chat.id ? (
+                                                <div className="rename-container">
+                                                    <input
+                                                        type="text"
+                                                        value={renameValue}
+                                                        onChange={(e) => setRenameValue(e.target.value)}
+                                                        onKeyDown={(e) => handleRenameKeyDown(e, chat.id)}
+                                                        onBlur={() => handleRenameSubmit(chat.id)}
+                                                        className="rename-input"
+                                                        autoFocus
+                                                        placeholder="Enter chat title..."
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <span className="chat-title">{chat.title}</span>
+                                                    <div className="chat-settings">
+                                                        <button 
+                                                            className="chat-settings-btn"
+                                                            onClick={(e) => handleSettingsClick(e, chat.id)}
+                                                            title="Chat settings"
+                                                            aria-label="Chat settings"
+                                                        >
+                                                            ⋯
+                                                        </button>
+                                                        {settingsMenuOpen === chat.id && (
+                                                            <div className="settings-menu">
+                                                                <button 
+                                                                    className="settings-menu-item"
+                                                                    onClick={() => handleSettingsOptionClick('rename', chat.id, chat.title)}
+                                                                >
+                                                                    <span className="menu-icon">✏️</span>
+                                                                    Rename
+                                                                </button>
+                                                                <button 
+                                                                    className={`settings-menu-item ${confirmingDelete === chat.id ? 'confirm-delete' : ''}`}
+                                                                    onClick={() => handleSettingsOptionClick('delete', chat.id)}
+                                                                >
+                                                                    <span className="menu-icon">🗑️</span>
+                                                                    {confirmingDelete === chat.id ? 'Sure?' : 'Delete'}
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </>
+                                            )}
                                         </li>
                                     ))}
                                 </ul>
                                 <div className="sidebar-actions">
-                                    <button onClick={onDownload} className="sidebar-btn">Download Chat</button>
+                                    <button onClick={() => onDownload('json')} className="sidebar-btn">Download Chat (JSON)</button>
+                                    <button onClick={() => onDownload('md')} className="sidebar-btn">Export Chat (Markdown)</button>
                                     <label htmlFor="upload-btn" className="sidebar-btn">
-                                        Upload Chat
+                                        Upload Chat (.json or .md)
                                     </label>
-                                    <input id="upload-btn" type="file" accept=".json" onChange={onUpload} style={{ display: 'none' }} />
+                                    <input id="upload-btn" type="file" accept=".json,.md,.markdown,text/markdown" onChange={onUpload} style={{ display: 'none' }} />
                                 </div>
                             </>
                         )}
                     </div>
                     <div className="collapsible-section">
-                        <h2 onClick={() => setIsResourcesVisible(!isResourcesVisible)}>
-                            Learning Resources {isResourcesVisible ? '▼' : '►'}
+                        <h2 onClick={() => setIsResourcesVisible(!isResourcesVisible)} className="section-header" role="button" aria-expanded={isResourcesVisible}>
+                            <span>Learning Resources</span>
+                            <span className="section-meta">
+                                <span className="count-badge" aria-label={`${learningResources.length} resources`}>{learningResources.length}</span>
+                                <span className="chevron" aria-hidden>{isResourcesVisible ? '▼' : '►'}</span>
+                            </span>
                         </h2>
                         {isResourcesVisible && (
                             <ul className="history-list">
@@ -99,7 +386,10 @@ export default function Sidebar({
                                     <li 
                                         key={resource.slug} 
                                         className="history-item"
-                                        onClick={() => onSelectResource(resource.slug)}
+                                        onClick={() => { 
+                                            onSelectResource(resource.slug); 
+                                            try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                                        }}
                                     >
                                         {resource.title}
                                     </li>
@@ -109,8 +399,12 @@ export default function Sidebar({
                     </div>
                     
                     <div className="collapsible-section">
-                        <h2 onClick={() => setIsPromptsVisible(!isPromptsVisible)}>
-                            System Prompts {isPromptsVisible ? '▼' : '►'}
+                        <h2 onClick={() => setIsPromptsVisible(!isPromptsVisible)} className="section-header" role="button" aria-expanded={isPromptsVisible}>
+                            <span>System Prompts</span>
+                            <span className="section-meta">
+                                <span className="count-badge" aria-label={`${systemPrompts.length} prompts`}>{systemPrompts.length}</span>
+                                <span className="chevron" aria-hidden>{isPromptsVisible ? '▼' : '►'}</span>
+                            </span>
                         </h2>
                         {isPromptsVisible && (
                             <ul className="history-list">
@@ -118,18 +412,117 @@ export default function Sidebar({
                                     <li 
                                         key={prompt} 
                                         className={`history-item ${prompt === selectedSystemPrompt ? 'active' : ''}`}
-                                        onClick={() => onSelectSystemPrompt(prompt)}
+                                        onClick={() => { 
+                                            onSelectSystemPrompt(prompt); 
+                                            try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                                        }}
                                     >
-                                        {prompt.replace(/-/g, ' ')}
+                                        {promptLabel(prompt)}
                                     </li>
                                 ))}
                             </ul>
                         )}
                     </div>
                     
+                    <div className="collapsible-section">
+                        <h2 onClick={() => setIsSettingsVisible(!isSettingsVisible)} className="section-header" role="button" aria-expanded={isSettingsVisible}>
+                            <span>Settings</span>
+                            <span className="section-meta">
+                                <span className="chevron" aria-hidden>{isSettingsVisible ? '▼' : '►'}</span>
+                            </span>
+                        </h2>
+                        {isSettingsVisible && (
+                            <div className="history-list" style={{ padding: '8px' }}>
+                                <label style={{ display: 'block', marginBottom: 6 }}>
+                                    Provider
+                                    <select
+                                        value={llmSettings?.provider || 'google'}
+                                        onChange={(e) => onUpdateLlmSettings({ provider: e.target.value })}
+                                        style={{ width: '100%', marginTop: 4 }}
+                                    >
+                                        <option value="google">Google</option>
+                                        <option value="openai">OpenAI</option>
+                                        <option value="anthropic">Anthropic</option>
+                                        <option value="mistral">Mistral</option>
+                                    </select>
+                                </label>
+                                <label style={{ display: 'block', marginBottom: 6 }}>
+                                    Preset model
+                                    <select
+                                        value={providerModelPresets[llmSettings?.provider || 'google'].includes(llmSettings?.models?.[llmSettings?.provider]) ? llmSettings.models[llmSettings.provider] : ''}
+                                        onChange={(e) => onUpdateLlmSettings({ models: { ...(llmSettings?.models||{}), [llmSettings?.provider]: e.target.value } })}
+                                        style={{ width: '100%', marginTop: 4 }}
+                                    >
+                                        <option value="">— Select a preset —</option>
+                                        {providerModelPresets[llmSettings?.provider || 'google'].map((m) => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <label style={{ display: 'block', marginBottom: 6 }}>
+                                    Temperature
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        max="2"
+                                        value={typeof llmSettings?.temperature === 'number' ? llmSettings.temperature : 0.7}
+                                        onChange={(e) => onUpdateLlmSettings({ temperature: Number(e.target.value) })}
+                                        placeholder="0.7"
+                                        style={{ width: '100%', marginTop: 4 }}
+                                        disabled={!!llmSettings?.useProviderDefaultTemperature}
+                                    />
+                                </label>
+                                <label style={{ display: 'block', marginBottom: 6 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={!!llmSettings?.useProviderDefaultTemperature}
+                                        onChange={(e) => onUpdateLlmSettings({ useProviderDefaultTemperature: e.target.checked })}
+                                        style={{ marginRight: 8 }}
+                                    />
+                                    Use provider default temperature
+                                </label>
+                                <label style={{ display: 'block', marginBottom: 6 }}>
+                                    Model
+                                    <input
+                                        type="text"
+                                        value={llmSettings?.models?.[llmSettings?.provider] || ''}
+                                        onChange={(e) => onUpdateLlmSettings({ models: { ...(llmSettings?.models||{}), [llmSettings?.provider]: e.target.value } })}
+                                        placeholder={llmSettings?.provider === 'google' ? 'gemini-2.5-pro' : 'e.g., gpt-4o, claude-3-5'}
+                                        style={{ width: '100%', marginTop: 4 }}
+                                    />
+                                </label>
+                                <label style={{ display: 'block', marginBottom: 6 }}>
+                                    API Key for {llmSettings?.provider?.toUpperCase()}
+                                    <input
+                                        type="text"
+                                        autoComplete="off"
+                                        value={llmSettings?.apiKeys?.[llmSettings?.provider] || ''}
+                                        onChange={(e) => onUpdateLlmSettings({ apiKey: e.target.value })}
+                                        placeholder={`Enter your ${llmSettings?.provider} API key (kept local)`}
+                                        style={{ 
+                                            width: '100%', 
+                                            marginTop: 4,
+                                            WebkitTextSecurity: 'disc',
+                                            textSecurity: 'disc'
+                                        }}
+                                    />
+                                </label>
+                                {!llmSettings?.apiKeys?.[llmSettings?.provider] && (
+                                    <p style={{ fontSize: 12, color: '#b94a48' }}>API key required for {llmSettings?.provider}. Add your key to use this provider.</p>
+                                )}
+                                <p style={{ fontSize: 12, color: '#888' }}>Your key stays in your browser storage and is sent only with requests.</p>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="sidebar-footer">
                         <button 
-                            onClick={onResetPageState}
+                            onClick={() => {
+                                try { localStorage.removeItem('sidebarState'); } catch {}
+                                setHistoryQuery('');
+                                onResetPageState();
+                            }}
                             className="reset-btn"
                             title="Reset all application state including chats, selections, and collapsed panels"
                         >

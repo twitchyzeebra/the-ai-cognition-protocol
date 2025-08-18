@@ -18,7 +18,7 @@ A Next.js application implementing a chat interface using the Google Gemini API 
 
 - Node.js 18 or higher
 - npm 8 or higher
-- Google Gemini API key (get one from [Google AI Studio](https://ai.google.dev/))
+- API keys for your preferred LLM providers (added through the UI)
 
 ### Installation
 
@@ -43,9 +43,7 @@ A Next.js application implementing a chat interface using the Google Gemini API 
    node encrypt-prompt.js generate-key
    ```
 
-5. Edit your `.env` file to add:
-   - Your Gemini API key
-   - The generated encryption key
+5. Edit your `.env` file to add the generated encryption key
 
 6. Start the development server:
    ```bash
@@ -72,11 +70,13 @@ Educational content is stored as markdown files in the `learning-resources/` dir
 
 For detailed development instructions, see the [Development Guide](/.github/copilot-instructions.md).
 
+See [Phase 2 TODO](./TODO-Phase-2.md) for the next milestone checklist (Community backend MVP).
+
 ## Technology Stack
 
 - Next.js 15
 - React 19
-- Google Generative AI SDK
+- Multi-provider LLM support (Gemini, OpenAI, Anthropic, Mistral)
 - Node.js Crypto for AES-256-GCM encryption
 - ReactMarkdown with remark-gfm
 
@@ -86,6 +86,6 @@ This project is licensed under the ISC License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- Google Generative AI for providing the Gemini API
+- The LLM provider teams (Google, OpenAI, Anthropic, Mistral) for their excellent APIs
 - The Next.js team for their excellent React framework
 - The open-source community for various libraries used in this project

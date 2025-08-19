@@ -65,10 +65,10 @@ function decrypt(encryptedData, key) {
 }
 
 
-function loadSystemPrompt(promptName = 'Core OS v1.1') {
+function loadSystemPrompt(promptName = 'Modes') {
     const fallbackPrompt = "You are a helpful AI assistant.";
     try {
-        // Use the specified prompt name or default to Core OS v1.1.json
+        // Use the specified prompt name or default to Modes.json
         const fileName = `${promptName}.json`;
         const encryptedPath = path.join(process.cwd(), 'SystemPrompts', 'Encrypted', fileName);
         
@@ -211,7 +211,7 @@ export async function POST(req) {
 
         const { prompt, history, systemPrompt: selectedPrompt, provider, apiKey, model, temperature } = requestData;
         const p = (provider || 'google').toLowerCase().trim();
-        const keySan = apiKey?.trim();
+        const keySan = requestData.useDeveloperKey ? process.env.MISTRAL_API_KEY?.trim() : apiKey?.trim();
         const modelSan = (model || '').trim();
         const tempNum = Number.isFinite(Number(temperature)) ? Number(temperature) : undefined;
         let temperatureUsed = undefined;
@@ -257,9 +257,9 @@ export async function POST(req) {
 
         // Build learning-resources augmentation (index + conditional inclusion)
         const learningCtx = buildLearningResourcesAugmentation(prompt, normalizedHistory);
-        const finalSystemInstruction = [baseSystemInstruction, learningCtx.indexText, learningCtx.includedText]
-            .filter(Boolean)
-            .join('\n\n');
+        const finalSystemInstruction = [baseSystemInstruction].filter(Boolean).join('\n\n'); //, learningCtx.indexText, learningCtx.includedText] Removed temporarily for testing
+           // .filter(Boolean)
+           // .join('\n\n');
 
         // Create a ReadableStream to pipe the AI response via adapter
         const stream = new ReadableStream({
@@ -294,9 +294,10 @@ export async function POST(req) {
                             abort = true;
                             break;
                         }
-                        if(piece) {
+                        const text = typeof piece === 'string' ? piece : '';
+                        if (text.trim().length > 0) {
                             yieldedAny = true;
-                            sendEvent('chunk', { text: piece });
+                            sendEvent('chunk', { text });
                         }
                     }
                     if(abort){
@@ -304,13 +305,13 @@ export async function POST(req) {
                     }
                     else if (!yieldedAny) {
                         console.warn("Adapter stream returned no text", { provider: p, model: effectiveModel });
-                        sendEvent(safeErrorPayload(error));
+                        sendEvent('error', { message: `Provider=${p} produced no text. model=${effectiveModel}` });
                     } else if (!abort){
                         sendEvent('done', {});
                     }
                 } catch (error) {
                     console.error("Error during stream generation. Check API key and model validity.", error?.message || error);
-                    sendEvent(safeErrorPayload(error));
+                    sendEvent('error', safeErrorPayload(error));
                 } finally {
                     if(!abort){
                     controller.close();

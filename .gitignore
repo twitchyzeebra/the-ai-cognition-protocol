@@ -49,3 +49,6 @@ dev-server.js
 
 #Encrypt-prompt Utility (only used to make raw prompts into encrypted, functional duplicate in chat.js)
 encrypt-prompt.js
+
+#plan.md
+plan.md

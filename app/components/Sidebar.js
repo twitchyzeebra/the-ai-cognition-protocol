@@ -447,6 +447,15 @@ export default function Sidebar({
                                     </select>
                                 </label>
                                 <label style={{ display: 'block', marginBottom: 6 }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={!!llmSettings?.useDeveloperKey}
+                                        onChange={(e) => onUpdateLlmSettings({ useDeveloperKey: e.target.checked })}
+                                        style={{ marginRight: 8 }}
+                                    />
+                                    Use developer key
+                                </label>
+                                <label style={{ display: 'block', marginBottom: 6 }}>
                                     Preset model
                                     <select
                                         value={providerModelPresets[llmSettings?.provider || 'google'].includes(llmSettings?.models?.[llmSettings?.provider]) ? llmSettings.models[llmSettings.provider] : ''}

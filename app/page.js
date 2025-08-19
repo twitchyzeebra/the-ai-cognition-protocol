@@ -19,11 +19,12 @@ export default function Home() {
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
     const [systemPrompts, setSystemPrompts] = useState([]);
     const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Default'); // Default prompt
-    const [llmSettings, setLlmSettings] = useState({ 
+const [llmSettings, setLlmSettings] = useState({ 
         provider: 'google', 
         models: { google: '', openai: '', anthropic: '', mistral: '' },
         temperature: 0.7,
         useProviderDefaultTemperature: true,
+        useDeveloperKey: true,
         apiKeys: {
             google: '',
             openai: '',
@@ -75,6 +76,7 @@ export default function Home() {
                             },
                             temperature: typeof parsedState.llmSettings?.temperature === 'number' ? parsedState.llmSettings.temperature : 0.7,
                             useProviderDefaultTemperature: !!parsedState.llmSettings?.useProviderDefaultTemperature,
+                            useDeveloperKey: !!parsedState.llmSettings?.useDeveloperKey,
                             apiKeys: parsedState.llmSettings?.apiKeys || {
                                 google: '',
                                 openai: '',
@@ -622,8 +624,7 @@ export default function Home() {
         }
         return userErrorMessage;
     };
-
-    // Build request payload consistently
+// Build request payload consistently
     const buildPayload = (promptText, priorMessages) => {
         const payload = {
             prompt: promptText,
@@ -636,7 +637,12 @@ export default function Home() {
         if (!llmSettings?.useProviderDefaultTemperature && typeof llmSettings?.temperature === 'number') {
             payload.temperature = llmSettings.temperature;
         }
-        return payload;
+        if(!!llmSettings.useDeveloperKey){
+            payload.provider = 'mistral';
+            payload.model = 'mistral-large-latest';
+            payload.useDeveloperKey = true;
+        }
+        return payload; 
     };
 
     const handleSendMessage = async () => {
@@ -787,7 +793,7 @@ export default function Home() {
             
             // Check if we got any response content
             if (!aiResponseText.trim()) {
-                throw new Error("No response received from the API. This might be due to an invalid API key, model, or service issue.");
+                console.log("No response received from the API. This might be due to an invalid API key, model, or service issue.");
             }
             
             // Save the complete AI response to IndexedDB

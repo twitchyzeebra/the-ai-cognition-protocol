@@ -1,5 +1,3 @@
-> A consolidated, ready-to-run reference of every tool from **Cognitive Methods** and **Cognitive Techniques**. Use **one tool per turn**. Pair with your Mode×Tier→Tool Matrix and Tier×Mode Crosswalk for routing.
-
 ## Tool → Success Criteria (Acceptance Tests)
 | Tool | Acceptance test (observable in 1 turn) |
 |---|---|
@@ -179,9 +177,3 @@
 **Success criteria:** Insight + concrete adjustment stated.  
 **Outcome tag:** `perspective_shifted`
 
----
-
-## Usage notes
-- Route using your Mode×Tier→Tool Matrix and Tier×Mode Crosswalk; select **one** tool per turn; avoid stacking.
-- If no movement in two turns, regulate (Open Field) → run HM→RTM 4‑step → re‑triage.
-- Keep metaphors ≤2 per turn; apply the **V‑A‑E** arc; close with one micro‑step *or* one question.

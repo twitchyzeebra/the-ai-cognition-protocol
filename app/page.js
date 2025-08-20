@@ -666,7 +666,7 @@ const [llmSettings, setLlmSettings] = useState({
         }
         if(!!llmSettings.useDeveloperKey){
             payload.provider = 'mistral';
-            payload.model = 'mistral-large-latest';
+            payload.model = 'mistral-medium-latest';
             payload.useDeveloperKey = true;
         }
         return payload; 

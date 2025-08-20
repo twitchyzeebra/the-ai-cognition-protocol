@@ -18,7 +18,7 @@ export default function Home() {
     const [isChatCollapsed, setIsChatCollapsed] = useState(true); // Chat panel minimized by default
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
     const [systemPrompts, setSystemPrompts] = useState([]);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Default'); // Default prompt
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Modes Explain Simply'); // Default prompt
 const [llmSettings, setLlmSettings] = useState({ 
         provider: 'google', 
         models: { google: '', openai: '', anthropic: '', mistral: '' },
@@ -918,50 +918,33 @@ const [llmSettings, setLlmSettings] = useState({
                         <p>Currently using: <strong>{selectedSystemPrompt.replace(/-/g, ' ')}</strong></p>
                         
                         <div className="panel-controls">
-                            <button 
-                                onClick={() => setIsChatCollapsed(false)}
+                            <button
+                                onClick={() => {
+                                    const lower = (s) => (s || '').toLowerCase();
+                                    const res = learningResources.find(r => lower(r.slug).includes('website guide') || lower(r.title).includes('website guide'));
+                                    if (res && res.slug) {
+                                        handleSelectResource(res.slug);
+                                    } else {
+                                        handleSelectResource('Website Guide');
+                                    }
+                                }}
                                 className="panel-toggle-btn"
                             >
-                                Show Chat Panel
+                                Show Website Guide
                             </button>
-                            {selectedResource && (
-                                <button 
-                                    onClick={() => setIsResourceCollapsed(false)}
-                                    className="panel-toggle-btn"
-                                >
-                                    Show Resource Panel
-                                </button>
-                            )}
+                            <button 
+                                onClick={() => {
+                                    setInput("Tell me about yourself and how to use you.");
+                                    setIsChatCollapsed(false); // Show the chat
+                                }}
+                                className="landing-option-btn"
+                            >
+                                Start talking with the AI
+                            </button>
+                            
                         </div>
 
                         <div className="landing-options">
-                            <button 
-                                onClick={() => {
-                                    setInput("Tell me about yourself and your capabilities.");
-                                    setIsChatCollapsed(false); // Show the chat
-                                }}
-                                className="landing-option-btn"
-                            >
-                                Tell me about your capabilities
-                            </button>
-                            <button 
-                                onClick={() => {
-                                    setInput("How can you help me with creative projects?");
-                                    setIsChatCollapsed(false); // Show the chat
-                                }}
-                                className="landing-option-btn"
-                            >
-                                Help with creative projects
-                            </button>
-                            <button 
-                                onClick={() => {
-                                    setInput("I need assistance with problem-solving.");
-                                    setIsChatCollapsed(false); // Show the chat
-                                }}
-                                className="landing-option-btn"
-                            >
-                                Problem-solving assistance
-                            </button>
                             <a 
                                 href="https://ko-fi.com/cognitivearchitect"
                                 target="_blank"

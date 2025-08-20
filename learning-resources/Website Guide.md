@@ -8,7 +8,7 @@ To communicate with the AI models, the application needs an API key. You have tw
 
 #### Using the Provided Key (For Testing Only)
 
-By default, a temporary testing key for the Mistral model is provided. Please be aware that this key is for initial trials and will be removed in the future, likely to be replaced with a subscription based model featuring a free tier. At this point, I highly recommend using your own key.
+By default, a temporary testing key for the Mistral medium model is provided. Please be aware that this key is for initial trials and will be removed in the future, likely to be replaced with a subscription based model featuring a free tier. At this point, I highly recommend using your own key.
 
 #### Using Your Own API Key (Recommended)
 

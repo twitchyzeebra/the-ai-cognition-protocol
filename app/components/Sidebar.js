@@ -24,9 +24,9 @@ export default function Sidebar({
     // UI state (with localStorage persistence)
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isHistoryVisible, setIsHistoryVisible] = useState(true);
-    const [isResourcesVisible, setIsResourcesVisible] = useState(true);
-    const [isPromptsVisible, setIsPromptsVisible] = useState(true);
-    const [isSettingsVisible, setIsSettingsVisible] = useState(true);
+    const [isResourcesVisible, setIsResourcesVisible] = useState(false);
+    const [isPromptsVisible, setIsPromptsVisible] = useState(false);
+    const [isSettingsVisible, setIsSettingsVisible] = useState(false);
     const [isSmall, setIsSmall] = useState(false);
 
     // Enhancements
@@ -39,8 +39,10 @@ export default function Sidebar({
     const providerModelPresets = {
         google: [
             'gemini-2.5-pro',
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
             'gemini-2.0-flash',
-            'gemini-1.5-pro'
+            'gemini-2.0-flash-lite',
         ],
         openai: [
             'gpt-4o',
@@ -54,8 +56,10 @@ export default function Sidebar({
         ],
         mistral: [
             'mistral-large-latest',
-            'open-mistral-nemo',
-            'open-mixtral-8x7b',
+            'mistral-medium-latest',
+            'mistral-small-latest',
+            'magistral-medium-latest',
+            'magistral-small-latest',
             'codestral-latest'
         ],
     };
@@ -432,7 +436,7 @@ export default function Sidebar({
                             </span>
                         </h2>
                         {isSettingsVisible && (
-                            <div className="history-list" style={{ padding: '8px' }}>
+                            <div className={`history-list settings-panel ${llmSettings?.useDeveloperKey ? 'subdued' : ''}`} style={{ padding: '8px' }}>
                                 <label style={{ display: 'block', marginBottom: 6 }}>
                                     Provider
                                     <select
@@ -449,6 +453,7 @@ export default function Sidebar({
                                 <label style={{ display: 'block', marginBottom: 6 }}>
                                     <input
                                         type="checkbox"
+                                        className="devkey-toggle"
                                         checked={!!llmSettings?.useDeveloperKey}
                                         onChange={(e) => onUpdateLlmSettings({ useDeveloperKey: e.target.checked })}
                                         style={{ marginRight: 8 }}
@@ -475,6 +480,7 @@ export default function Sidebar({
                                         step="0.1"
                                         min="0"
                                         max="2"
+                                        className="temperature"
                                         value={typeof llmSettings?.temperature === 'number' ? llmSettings.temperature : 0.7}
                                         onChange={(e) => onUpdateLlmSettings({ temperature: Number(e.target.value) })}
                                         placeholder="0.7"
@@ -485,6 +491,7 @@ export default function Sidebar({
                                 <label style={{ display: 'block', marginBottom: 6 }}>
                                     <input
                                         type="checkbox"
+                                        className="temptoggle"
                                         checked={!!llmSettings?.useProviderDefaultTemperature}
                                         onChange={(e) => onUpdateLlmSettings({ useProviderDefaultTemperature: e.target.checked })}
                                         style={{ marginRight: 8 }}

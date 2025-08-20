@@ -347,3 +347,13 @@
   #sidebar .sidebar-header { position: relative; padding-left: 56px; }
   #sidebar .new-chat-btn { z-index: 30; }
 }
+
+/* Subdued state for Settings panel when using developer key */
+.settings-panel.subdued input:not(.devkey-toggle):not(.temperature):not(.temptoggle),
+.settings-panel.subdued select,
+.settings-panel.subdued textarea {
+  /* Visually indicate settings are not in effect while remaining fully interactive */
+  opacity: 0.55;
+  filter: grayscale(30%);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}

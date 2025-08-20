@@ -28,6 +28,9 @@ body {
     display: flex;
     flex-direction: row;
     height: 100dvh;
+    min-width: 0;      /* allow columns to shrink; prevent overflow from long content */
+    min-height: 0;     /* allow internal scroll areas to size correctly */
+    gap: 4px;         /* spacing between chat and resource columns */
 }
 
 #chat-column {
@@ -35,6 +38,9 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-width: 0;    /* allow shrinking with long content */
+    min-height: 0;   /* enable inner scroll areas */
+    overflow: hidden;/* contain overflowing markdown/code */
     border-right: 1px solid var(--border-color);
     padding: 1vw;
     box-sizing: border-box;
@@ -43,6 +49,8 @@ body {
 #resource-column {
     flex: 1;
     height: 100%;
+    min-width: 0;    /* allow shrinking with long content */
+    min-height: 0;   /* ensure proper scrolling behavior */
     overflow-y: auto;
     padding: 20px;
     box-sizing: border-box;
@@ -50,6 +58,7 @@ body {
 
 #chat-log {
     flex-grow: 1;
+    min-height: 0; /* allow this area to shrink and scroll instead of growing the panel */
     overflow-y: auto;
     padding: 10px;
     background: var(--container-bg);
@@ -114,6 +123,28 @@ body {
     background: var(--assistant-message-bg);
     color: white;
     border-bottom-left-radius: 4px;
+}
+
+/* Ensure long content never expands the chat panel; wrap and contain overflow */
+.message .content {
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+}
+.message .content pre,
+.message .content code {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-width: 100%;
+    overflow-x: auto;
+}
+.message .content table {
+    width: 100%;
+    display: block;
+    overflow-x: auto;
+}
+.message .content img {
+    max-width: 100%;
+    height: auto;
 }
 
 .loader {

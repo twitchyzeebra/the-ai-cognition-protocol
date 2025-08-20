@@ -27,14 +27,26 @@ const jsonError = (error, status = 400) => new Response(JSON.stringify({ error }
 const isDev = process.env.NODE_ENV === 'development';
 function safeErrorPayload(input) {
     const raw = typeof input === 'string' ? input : ((input && input.message) ? input.message : '');
+    const rawStr = String(raw || '');
+    // Derive a stable error code from the raw error string so clients can map reliably even in production
+    let code = undefined;
+    const lower = rawStr.toLowerCase();
+    if (lower.includes('produced no text')) code = 'PROVIDER_NO_TEXT';
+    else if (lower.includes('safety') && lower.includes('block')) code = 'SAFETY_BLOCK';
+    else if (lower.includes('401')) code = 'AUTH_ERROR';
+    else if (lower.includes('429') || lower.includes('rate')) code = 'RATE_LIMIT';
+    else if (lower.includes('403')) code = 'FORBIDDEN';
+    else if (lower.includes('413')) code = 'REQUEST_TOO_LARGE';
+    else if (lower.includes('500')) code = 'SERVER_ERROR';
+
     if (isDev) {
         try {
-            return { message: String(raw).slice(0, 500) };
+            return { message: rawStr.slice(0, 500), code };
         } catch {
-            return { message: 'Error occurred' };
+            return { message: 'Error occurred', code };
         }
     }
-    return { message: 'An error occurred while generating a response.' };
+    return { message: 'An error occurred while generating a response.', code };
 }
 
 // Provider configuration (adapters + fallback models)
@@ -305,7 +317,7 @@ export async function POST(req) {
                     }
                     else if (!yieldedAny) {
                         console.warn("Adapter stream returned no text", { provider: p, model: effectiveModel });
-                        sendEvent('error', { message: `Provider=${p} produced no text. model=${effectiveModel}` });
+                        sendEvent('error', { message: `Provider=${p} produced no text. model=${effectiveModel}`, code: 'PROVIDER_NO_TEXT' });
                     } else if (!abort){
                         sendEvent('done', {});
                     }

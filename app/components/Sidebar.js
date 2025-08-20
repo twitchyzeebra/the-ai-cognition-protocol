@@ -458,12 +458,12 @@ export default function Sidebar({
                                 <label style={{ display: 'block', marginBottom: 6 }}>
                                     Preset model
                                     <select
-                                        value={providerModelPresets[llmSettings?.provider || 'google'].includes(llmSettings?.models?.[llmSettings?.provider]) ? llmSettings.models[llmSettings.provider] : ''}
+                                        value={providerModelPresets[llmSettings?.provider || 'google']?.includes(llmSettings?.models?.[llmSettings?.provider]) ? llmSettings?.models[llmSettings?.provider] : ''}
                                         onChange={(e) => onUpdateLlmSettings({ models: { ...(llmSettings?.models||{}), [llmSettings?.provider]: e.target.value } })}
                                         style={{ width: '100%', marginTop: 4 }}
                                     >
                                         <option value="">— Select a preset —</option>
-                                        {providerModelPresets[llmSettings?.provider || 'google'].map((m) => (
+                                        {providerModelPresets[llmSettings?.provider || 'google']?.map((m) => (
                                             <option key={m} value={m}>{m}</option>
                                         ))}
                                     </select>

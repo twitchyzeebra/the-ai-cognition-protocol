@@ -597,7 +597,30 @@ const [llmSettings, setLlmSettings] = useState({
     // Map technical errors to user-friendly messages (no raw error echo)
     const mapErrorToUserMessage = (error) => {
         let userErrorMessage = "Sorry, I encountered an error";
+        const code = error && error.code ? String(error.code) : '';
         const em = (error && error.message) ? error.message : '';
+
+        // Prefer structured codes from server (available even in production-safe errors)
+        switch (code) {
+            case 'PROVIDER_NO_TEXT':
+                return "Error: The model returned no content. This can happen intermittently. Try Retry or rephrase your request, or switch models.";
+            case 'SAFETY_BLOCK':
+                return "Error: The response was blocked by the provider's safety filters. Try rephrasing your request or choose a different model.";
+            case 'AUTH_ERROR':
+                return "Error: Authentication failed. Please check your API key in the LLM Settings.";
+            case 'RATE_LIMIT':
+                return "Error: Rate limit exceeded. Please wait a moment before trying again.";
+            case 'FORBIDDEN':
+                return "Error: Access forbidden. Your API key may not have the required permissions.";
+            case 'REQUEST_TOO_LARGE':
+                return "Error: Request too large. Your message or conversation history is too long.";
+            case 'SERVER_ERROR':
+                return "Error: Server error. The API service is experiencing issues. Please try again later.";
+            default:
+                break;
+        }
+
+        // Fallback on message string heuristics
         if (em.includes('API request failed with status 401')) {
             userErrorMessage = "Error: Authentication failed. Please check your API key in the LLM Settings.";
         } else if (em.includes('API request failed with status 403')) {
@@ -614,6 +637,10 @@ const [llmSettings, setLlmSettings] = useState({
             userErrorMessage = "Error: Missing API key. Please add your API key in the LLM Settings panel.";
         } else if (em.includes('Unsupported provider')) {
             userErrorMessage = "Error: Unsupported provider. Please select a valid LLM provider in Settings.";
+        } else if (em.toLowerCase().includes('produced no text')) {
+            userErrorMessage = "Error: The model returned no content. This can happen intermittently. Try Retry or rephrase your request, or switch models.";
+        } else if (em.toLowerCase().includes('safety') && em.toLowerCase().includes('block')) {
+            userErrorMessage = "Error: The response was blocked by the provider's safety filters. Try rephrasing your request or choose a different model.";
         } else if (em.includes('No response received')) {
             userErrorMessage = "Error: No response received from the API. Please check your API key and model selection.";
         } else if (em.includes('fetch')) {
@@ -764,8 +791,11 @@ const [llmSettings, setLlmSettings] = useState({
                         updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: aiResponseText };
                         return updated;
                     });
-                } else if (json.type === 'error' && json.message) {
-                    throw new Error(json.message);
+                } else if (json.type === 'error') {
+                    try { console.debug("SSE error event received", { code: json.code, message: json.message }); } catch {}
+                    const err = new Error(json.message || 'Server error');
+                    if (json.code) err.code = json.code;
+                    throw err;
                 } else if (json.type === 'done') {
                     // no-op; finalization will occur after stream ends
                 }
@@ -824,6 +854,7 @@ const [llmSettings, setLlmSettings] = useState({
             }
             
             const userErrorMessage = mapErrorToUserMessage(error);
+            try { console.debug("Client mapped error", { code: error && error.code, message: error && error.message }); } catch {}
             
             console.error("API error occurred during chat request:", error);
             
@@ -1065,8 +1096,11 @@ const [llmSettings, setLlmSettings] = useState({
                                                             updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: aiResponseText };
                                                             return updated;
                                                         });
-                                                    } else if (json.type === 'error' && json.message) {
-                                                        throw new Error(json.message);
+                                                    } else if (json.type === 'error') {
+                                                        try { console.debug("SSE error event received (retry)", { code: json.code, message: json.message }); } catch {}
+                                                        const err = new Error(json.message || 'Server error');
+                                                        if (json.code) err.code = json.code;
+                                                        throw err;
                                                     } else if (json.type === 'done') {
                                                         // no-op
                                                     }
@@ -1109,6 +1143,7 @@ const [llmSettings, setLlmSettings] = useState({
                                                 }
 
                                                 const userErrorMessage = mapErrorToUserMessage(error);
+                                                try { console.debug("Client mapped error (retry)", { code: error && error.code, message: error && error.message }); } catch {}
 
                                                 console.error("API error occurred during retry chat request:", error);
 

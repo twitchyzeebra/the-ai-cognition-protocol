@@ -174,6 +174,9 @@ function handleDecryption(keyHex, promptName) {
         }
 
         const decryptedText = decrypt(encryptedData, key);
+        const outPath = path.join(path.resolve('SystemPrompts', 'Raw'), `${promptName}.decrypted.txt`);
+        fs.writeFileSync(outPath, decryptedText, 'utf8');
+        console.log(`Decryption successful! Decrypted text saved to ${outPath}`);
 
         console.log('Success! Decryption test passed.');
         console.log('\n--- Decrypted Text (first 100 chars) ---');

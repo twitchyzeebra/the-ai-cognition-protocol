@@ -8,7 +8,7 @@ To communicate with the AI models, the application needs an API key. You have tw
 
 #### Using the Provided Key (For Testing Only)
 
-By default, a temporary testing key for the Mistral medium model is provided. Please be aware that this key is for initial trials and will be removed in the future, likely to be replaced with a subscription based model featuring a free tier. At this point, I highly recommend using your own key.
+By default, a temporary testing key for the Mistral large model is provided. Please be aware that this key is for initial trials and you will frequently encounter the error "Error: Rate limit exceeded. Please wait a moment before trying again." The key will be removed soon, likely to be replaced with a subscription based model featuring a free tier. At this point, I highly recommend using your own key which will always be supported.
 
 #### Using Your Own API Key (Recommended)
 
@@ -24,7 +24,7 @@ You can bring your own key from a supported AI provider (Other providers coming 
 
 2.  **Configure your key in the application's sidebar.** Once you have your key, open the settings panel in the sidebar to enter it and select your desired model.
 
-## 🧠 Understanding the AI Personas
+## 🧠 Understanding the AI System Prompts
 
 This application allows you to choose from several distinct AI system prompts, each designed for a different type of analysis.
 
@@ -32,16 +32,13 @@ This application allows you to choose from several distinct AI system prompts, e
     *   This is the primary and recommended system prompt. It uses a sophisticated framework to analyze human relationships, communication, and cognitive patterns, providing deep, structured insights.
 
 *   **Modes Explain Simply + Modes Technical Explain Simply**
-    *   They are functionally identical to their respective documents, with the addition of "Delivery: Explain to the user simply" at the beginning. 
+    *   They are functionally identical to their respective documents, with the addition of "Delivery: Explain to the user simply". 
 
 *   **Modes Technical**
     *   A highly detailed and technical version of "Modes". This is designed for researchers or advanced users who want to see a complex analysis.
 
 *   **Tiers**
     *   This focuses on analyzing a situation through distinct "Tiers of Cognition"—from raw, uninterpreted data (T1) all the way to deep, synthesized insights (T5). It provides a layered breakdown of the thinking process.
-
-*   **Tiers + Modes**
-    *   It uses the deep relational understanding of "Modes" but structures its entire output according to the formal "Tiers" framework, offering a unique blend of insight and structure.
 
 *   **Default**
     *   A standard, helpful AI assistant without any specialized cognitive framework. This is useful as a baseline for comparison.

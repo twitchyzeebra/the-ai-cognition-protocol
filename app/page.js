@@ -18,8 +18,8 @@ export default function Home() {
     const [isChatCollapsed, setIsChatCollapsed] = useState(true); // Chat panel minimized by default
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
     const [systemPrompts, setSystemPrompts] = useState([]);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Modes Explain Simply'); // Default prompt
-const [llmSettings, setLlmSettings] = useState({ 
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Modes v2 Explain Simply'); // Default prompt
+    const [llmSettings, setLlmSettings] = useState({ 
         provider: 'google', 
         models: { google: '', openai: '', anthropic: '', mistral: '' },
         temperature: 0.7,
@@ -36,8 +36,12 @@ const [llmSettings, setLlmSettings] = useState({
     const inflightControllerRef = useRef(null);
     const retryStateRef = useRef(null);
     const [messagesLoaded, setMessagesLoaded] = useState(true);
-
-        const [isLoaded, setIsLoaded] = useState(false);
+    const [isLoaded, setIsLoaded] = useState(false);
+    const [usageLast, setUsageLast] = useState(null);
+    const [usageTotals, setUsageTotals] = useState({ input: 0, output: 0, total: 0 });
+    const receivedUsageRef = useRef(false);
+    const lastUserPromptRef = useRef('');
+    const lastTurnHistorySnapshotRef = useRef([]);
 
     // Load state on initial render
     useEffect(() => {
@@ -162,6 +166,35 @@ const [llmSettings, setLlmSettings] = useState({
         };
         loadMessages();
     }, [activeChatId]);
+
+    // Load per-chat usage totals from localStorage when active chat changes
+    useEffect(() => {
+        if (!activeChatId) {
+            setUsageTotals({ input: 0, output: 0, total: 0 });
+            return;
+        }
+        try {
+            const raw = localStorage.getItem(`usageTotals:${activeChatId}`);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                setUsageTotals({
+                    input: Number(parsed.input) || 0,
+                    output: Number(parsed.output) || 0,
+                    total: Number(parsed.total) || 0
+                });
+            } else {
+                setUsageTotals({ input: 0, output: 0, total: 0 });
+            }
+        } catch {}
+    }, [activeChatId]);
+
+    // Persist usage totals per chat to localStorage
+    useEffect(() => {
+        if (!activeChatId) return;
+        try {
+            localStorage.setItem(`usageTotals:${activeChatId}`, JSON.stringify(usageTotals));
+        } catch {}
+    }, [activeChatId, usageTotals]);
 
     // Auto-scroll chat log to bottom on new message, but only if user is already at the bottom
     useEffect(() => {
@@ -666,11 +699,15 @@ const [llmSettings, setLlmSettings] = useState({
         }
         if(!!llmSettings.useDeveloperKey){
             payload.provider = 'mistral';
-            payload.model = 'mistral-medium-latest';
+            payload.model = 'mistral-large-latest';
             payload.useDeveloperKey = true;
         }
         return payload; 
     };
+
+    const resend = () =>  {
+        setInput(lastUserPromptRef.current || '');
+    }
 
     const handleSendMessage = async () => {
         if (!input.trim()) return;
@@ -684,6 +721,10 @@ const [llmSettings, setLlmSettings] = useState({
 
         const userMessage = { role: 'user', content: input };
         const newMessages = [...messages, userMessage];
+        // Initialize usage tracking for this turn
+        receivedUsageRef.current = false;
+        lastUserPromptRef.current = input;
+        lastTurnHistorySnapshotRef.current = messages;
         setMessages(newMessages);
         setInput('');
         setIsLoading(true);
@@ -791,6 +832,20 @@ const [llmSettings, setLlmSettings] = useState({
                         updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: aiResponseText };
                         return updated;
                     });
+                } else if (json.type === 'usage') {
+                    // Provider-reported token usage
+                    const u = {
+                        inputTokens: Number(json.inputTokens || 0),
+                        outputTokens: Number(json.outputTokens || 0),
+                        totalTokens: Number(json.totalTokens || 0),
+                    };
+                    receivedUsageRef.current = true;
+                    setUsageLast(u);
+                    setUsageTotals(prev => ({
+                        input: prev.input + u.inputTokens,
+                        output: prev.output + u.outputTokens,
+                        total: prev.total + u.totalTokens
+                    }));
                 } else if (json.type === 'error') {
                     try { console.debug("SSE error event received", { code: json.code, message: json.message }); } catch {}
                     const err = new Error(json.message || 'Server error');
@@ -821,6 +876,30 @@ const [llmSettings, setLlmSettings] = useState({
                 }
             }
             
+            // If provider did not report usage, estimate tokens for this turn
+            if (!receivedUsageRef.current) {
+                const estimateTokens = (s) => {
+                    try {
+                        const len = (s || '').length;
+                        return len ? Math.max(1, Math.ceil(len / 4)) : 0;
+                    } catch { return 0; }
+                };
+                const historyText = (lastTurnHistorySnapshotRef.current || []).map(m => (m && m.content) ? m.content : '').join('\n');
+                const inputText = [historyText, lastUserPromptRef.current, selectedSystemPrompt].filter(Boolean).join('\n');
+                const inputTokens = estimateTokens(inputText);
+                const outputTokens = estimateTokens(aiResponseText);
+                const totalTokens = inputTokens + outputTokens;
+                const usage = {
+                    inputTokens, outputTokens, totalTokens, method: 'estimated'
+                };
+                setUsageLast(usage);
+                setUsageTotals(prev => ({
+                    input: prev.input + inputTokens,
+                    output: prev.output + outputTokens,
+                    total: prev.total + totalTokens
+                }));
+            }
+
             // Check if we got any response content
             if (!aiResponseText.trim()) {
                 console.log("No response received from the API. This might be due to an invalid API key, model, or service issue.");
@@ -859,7 +938,7 @@ const [llmSettings, setLlmSettings] = useState({
             console.error("API error occurred during chat request:", error);
             
             // Save request for retry on failure
-            const retryPayload = buildPayload(input, messages, undefined);
+            const retryPayload = buildPayload(input, messages);
             retryStateRef.current = { chatId: currentChatId, payload: retryPayload };
             
             // Add error message to chat
@@ -962,13 +1041,28 @@ const [llmSettings, setLlmSettings] = useState({
                             <div id="chat-column">
                                 <div className="column-header">
                                     <h2>Chat</h2>
-                                    <button 
-                                        className="collapse-btn" 
-                                        onClick={() => setIsChatCollapsed(true)} 
-                                        title="Collapse chat"
-                                    >
-                                        ×
-                                    </button>
+                                    <div className="header-actions">
+                                        {(usageLast || usageTotals.total > 0) && (
+                                            <div
+                                                className="header-usage"
+                                                title={`${usageLast ? `Last: ${usageLast.inputTokens} in + ${usageLast.outputTokens} out = ${usageLast.totalTokens} tokens` : ''}${usageLast ? ' | ' : ''}Session: ${usageTotals.input} in + ${usageTotals.output} out = ${usageTotals.total} tokens`}
+                                            >
+                                                {usageLast && (
+                                                    <div className="usage-line last">
+                                                        Last: {usageLast.inputTokens} in + {usageLast.outputTokens} out = {usageLast.totalTokens} tokens
+                                                    </div>
+                                                )}
+                                                <div className="usage-line session">Session: {usageTotals.input} in + {usageTotals.output} out = {usageTotals.total} tokens</div>
+                                            </div>
+                                        )}
+                                        <button 
+                                            className="collapse-btn" 
+                                            onClick={() => setIsChatCollapsed(true)} 
+                                            title="Collapse chat"
+                                        >
+                                            ×
+                                        </button>
+                                    </div>
                                 </div>
                                 <div id="chat-log" ref={chatLogRef}>
                                     {messages.map((msg, index) => (
@@ -1005,147 +1099,11 @@ const [llmSettings, setLlmSettings] = useState({
                                             Stop
                                         </button>
                                     )}
-                                    {!isLoading && retryStateRef.current && (
-                                        <button onClick={async () => {
-                                            const state = retryStateRef.current;
-                                            if (!state || !state.chatId || !state.payload) return;
-                                            setIsLoading(true);
-                                            try {
-                                                try { inflightControllerRef.current?.abort(); } catch {}
-                                                inflightControllerRef.current = new AbortController();
-
-                                                const response = await fetch('/api/chat', {
-                                                    method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify(state.payload),
-                                                    signal: inflightControllerRef.current.signal,
-                                                });
-
-                                                if (!response.ok) {
-                                                    let errorMessage = `API request failed with status ${response.status}`;
-                                                    try {
-                                                        const errorData = await response.json();
-                                                        if (errorData.error) {
-                                                            errorMessage = errorData.error;
-                                                        } else if (errorData.message) {
-                                                            errorMessage = errorData.message;
-                                                        }
-                                                    } catch (e) {
-                                                        errorMessage = `API request failed: ${response.status} ${response.statusText}`;
-                                                    }
-                                                    throw new Error(errorMessage);
-                                                }
-
-                                                if (!response.body) {
-                                                    throw new Error("Response body is null");
-                                                }
-
-                                                const reader = response.body.getReader();
-                                                const decoder = new TextDecoder();
-                                                let aiResponseText = '';
-
-                                                // Add a placeholder for the AI response
-                                                setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-                                                // Robust SSE parsing with a rolling buffer to handle chunk-splitting
-                                                let buffer = '';
-                                                const applyEvent = (eventText) => {
-                                                    // Normalize CRLF and accumulate any 'data:' lines per SSE spec
-                                                    const lines = eventText.replace(/\r/g, '').split('\n');
-                                                    const dataLines = [];
-                                                    for (const raw of lines) {
-                                                        if (raw.startsWith('data:')) {
-                                                            dataLines.push(raw.slice(5).trimStart());
-                                                        }
-                                                    }
-                                                    if (dataLines.length === 0) return;
-                                                    const payload = dataLines.join('\n');
-                                                    let json;
-                                                    try {
-                                                        json = JSON.parse(payload);
-                                                    } catch {
-                                                        // Not valid JSON; ignore this event
-                                                        return;
-                                                    }
-                                                    if (json.type === 'chunk' && typeof json.text === 'string') {
-                                                        aiResponseText += json.text;
-                                                        setMessages(prev => {
-                                                            const updated = [...prev];
-                                                            // Ensure there's an assistant placeholder at the end; avoid overwriting a user message
-                                                            if (updated.length === 0 || updated[updated.length - 1].role !== 'assistant') {
-                                                                updated.push({ role: 'assistant', content: '' });
-                                                            }
-                                                            // Update the assistant message content safely
-                                                            updated[updated.length - 1] = { ...updated[updated.length - 1], role: 'assistant', content: aiResponseText };
-                                                            return updated;
-                                                        });
-                                                    } else if (json.type === 'error') {
-                                                        try { console.debug("SSE error event received (retry)", { code: json.code, message: json.message }); } catch {}
-                                                        const err = new Error(json.message || 'Server error');
-                                                        if (json.code) err.code = json.code;
-                                                        throw err;
-                                                    } else if (json.type === 'done') {
-                                                        // no-op
-                                                    }
-                                                };
-
-                                                while (true) {
-                                                    const { done, value } = await reader.read();
-                                                    if (done) {
-                                                        // Process any residual buffered event (no trailing blank line)
-                                                        if (buffer.trim().length > 0) {
-                                                            applyEvent(buffer);
-                                                        }
-                                                        break;
-                                                    }
-                                                    buffer += decoder.decode(value, { stream: true });
-
-                                                    // Extract complete SSE events separated by blank lines
-                                                    let sepIndex;
-                                                    while ((sepIndex = buffer.indexOf('\n\n')) !== -1) {
-                                                        const eventBlock = buffer.slice(0, sepIndex);
-                                                        buffer = buffer.slice(sepIndex + 2);
-                                                        applyEvent(eventBlock);
-                                                    }
-                                                }
-
-                                                // Check if we got any response content
-                                                if (!aiResponseText.trim()) {
-                                                    throw new Error("No response received from the API. This might be due to an invalid API key, model, or service issue.");
-                                                }
-
-                                                // Save the complete AI response to IndexedDB
-                                                const aiMessage = { role: 'assistant', content: aiResponseText };
-                                                await chatDB.addMessage(state.chatId, aiMessage.role, aiMessage.content);
-
-                                                // Clear retry state on success
-                                                retryStateRef.current = null;
-                                            } catch (error) {
-                                                if (error?.name === 'AbortError') {
-                                                    return;
-                                                }
-
-                                                const userErrorMessage = mapErrorToUserMessage(error);
-                                                try { console.debug("Client mapped error (retry)", { code: error && error.code, message: error && error.message }); } catch {}
-
-                                                console.error("API error occurred during retry chat request:", error);
-
-                                                const errorMessage = { role: 'assistant', content: userErrorMessage };
-                                                setMessages(prev => [...prev, errorMessage]);
-
-                                                try {
-                                                    await chatDB.addMessage(state.chatId, errorMessage.role, errorMessage.content);
-                                                } catch (dbError) {
-                                                    console.error('Failed to save error message to database (retry):', dbError);
-                                                }
-                                            } finally {
-                                                setIsLoading(false);
-                                                inflightControllerRef.current = null;
-                                            }
-                                        }}>
-                                            Retry
+                                    {!isLoading && retryStateRef.current !== null && input === '' &&(
+                                        <button onClick={resend}> 
+                                            Copy Last
                                         </button>
-                                    )}
+                        )}
                                 </div>
                             </div>
                         )}

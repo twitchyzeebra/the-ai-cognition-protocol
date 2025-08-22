@@ -343,6 +343,49 @@ body {
     background-color: rgba(255, 255, 255, 0.1);
 }
 
+/* Header actions (right side of Chat header) */
+.header-actions {
+    display: grid;
+    grid-template-columns: 1fr auto; /* usage grows, close button stays */
+    align-items: center;
+    gap: 10px;
+    margin-left: auto; /* push actions to the right */
+    min-width: 0;      /* allow usage text to shrink/wrap */
+}
+
+.header-usage {
+    display: grid;
+    grid-template-columns: auto minmax(60ch, 1fr); /* label | values with generous space (millions-scale) */
+    column-gap: 12px;
+    align-items: start;
+    font-size: 14px;
+    color: #cfcfcf;
+    white-space: normal;      /* allow wrapping if truly necessary */
+    overflow: hidden;        /* don't clip */
+    text-overflow: unset;     /* no ellipsis */
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.header-usage::before {
+    content: "Token Usage:";
+    white-space: nowrap;
+    padding-left: 10px;
+    padding-right: 15px;
+    font-weight: 600;
+    color: #e6e6e6;
+}
+.header-usage > * {
+    grid-column: 2;           /* place usage lines in the values column */
+    text-align: left;
+    white-space: nowrap;      /* keep each line intact */
+}
+@media (max-width: 900px) {
+  .header-usage {
+    grid-template-columns: auto minmax(36ch, 1fr); /* smaller but still roomy on mobile (millions-scale) */
+    font-size: 11px;
+  }
+}
+
+
 /* Panel controls on landing page */
 .panel-controls {
     display: flex;

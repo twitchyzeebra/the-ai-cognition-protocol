@@ -306,6 +306,11 @@ export async function POST(req) {
                             abort = true;
                             break;
                         }
+                        if (piece && typeof piece === 'object' && piece.__usage) {
+                            // Forward provider-reported token usage to the client
+                            sendEvent('usage', piece.__usage);
+                            continue;
+                        }
                         const text = typeof piece === 'string' ? piece : '';
                         if (text.trim().length > 0) {
                             yieldedAny = true;

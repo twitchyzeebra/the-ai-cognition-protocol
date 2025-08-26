@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Sidebar from './components/Sidebar';
 import chatDB from '../lib/database';
+import ChatLog from './components/ChatLog';
 
 export default function Home() {
     const [messages, setMessages] = useState([]);
@@ -18,11 +19,11 @@ export default function Home() {
     const [isChatCollapsed, setIsChatCollapsed] = useState(true); // Chat panel minimized by default
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
     const [systemPrompts, setSystemPrompts] = useState([]);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Modes v2 Explain Simply'); // Default prompt
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Cognitive Tiers With Delivery'); // Default prompt
     const [llmSettings, setLlmSettings] = useState({ 
         provider: 'google', 
         models: { google: '', openai: '', anthropic: '', mistral: '' },
-        temperature: 0.7,
+        temperature: 0.0,
         useProviderDefaultTemperature: true,
         useDeveloperKey: true,
         apiKeys: {
@@ -127,6 +128,8 @@ export default function Home() {
     // Save UI state to localStorage (excluding chat data which goes to IndexedDB)
     useEffect(() => {
         if (!isLoaded) return; // Don't save until the initial load is complete
+        // Adaptive debounce: longer delay while streaming to avoid excessive writes
+        const delay = isLoading ? 1000 : 500;
         const timeoutId = setTimeout(() => {
             localStorage.setItem('pageState', JSON.stringify({
                 activeChatId,
@@ -140,7 +143,7 @@ export default function Home() {
             if (chatHistory.length > 0) {
                 localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
             }
-        }, 100);
+    }, delay);
         return () => clearTimeout(timeoutId);
     }, [isLoaded, chatHistory, activeChatId, selectedResource, resourceContent, isChatCollapsed, isResourceCollapsed, selectedSystemPrompt, llmSettings]);
 
@@ -432,7 +435,7 @@ export default function Home() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `chat-${activeChat.id}.md`;
+            a.download = `${activeChat.title}.md`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -627,63 +630,6 @@ export default function Home() {
         }
     };
 
-    // Map technical errors to user-friendly messages (no raw error echo)
-    const mapErrorToUserMessage = (error) => {
-        let userErrorMessage = "Sorry, I encountered an error";
-        const code = error && error.code ? String(error.code) : '';
-        const em = (error && error.message) ? error.message : '';
-
-        // Prefer structured codes from server (available even in production-safe errors)
-        switch (code) {
-            case 'PROVIDER_NO_TEXT':
-                return "Error: The model returned no content. This can happen intermittently. Try Retry or rephrase your request, or switch models.";
-            case 'SAFETY_BLOCK':
-                return "Error: The response was blocked by the provider's safety filters. Try rephrasing your request or choose a different model.";
-            case 'AUTH_ERROR':
-                return "Error: Authentication failed. Please check your API key in the LLM Settings.";
-            case 'RATE_LIMIT':
-                return "Error: Rate limit exceeded. Please wait a moment before trying again.";
-            case 'FORBIDDEN':
-                return "Error: Access forbidden. Your API key may not have the required permissions.";
-            case 'REQUEST_TOO_LARGE':
-                return "Error: Request too large. Your message or conversation history is too long.";
-            case 'SERVER_ERROR':
-                return "Error: Server error. The API service is experiencing issues. Please try again later.";
-            default:
-                break;
-        }
-
-        // Fallback on message string heuristics
-        if (em.includes('API request failed with status 401')) {
-            userErrorMessage = "Error: Authentication failed. Please check your API key in the LLM Settings.";
-        } else if (em.includes('API request failed with status 403')) {
-            userErrorMessage = "Error: Access forbidden. Your API key may not have the required permissions.";
-        } else if (em.includes('API request failed with status 429') || em.includes('Too many requests')) {
-            userErrorMessage = "Error: Rate limit exceeded. Please wait a moment before trying again.";
-        } else if (em.includes('API request failed with status 400')) {
-            userErrorMessage = "Error: Invalid request. Please check your model selection and try again.";
-        } else if (em.includes('API request failed with status 413')) {
-            userErrorMessage = "Error: Request too large. Your message or conversation history is too long.";
-        } else if (em.includes('API request failed with status 500') || em.includes('Internal Server Error')) {
-            userErrorMessage = "Error: Server error. The API service is experiencing issues. Please try again later.";
-        } else if (em.includes('Missing API key')) {
-            userErrorMessage = "Error: Missing API key. Please add your API key in the LLM Settings panel.";
-        } else if (em.includes('Unsupported provider')) {
-            userErrorMessage = "Error: Unsupported provider. Please select a valid LLM provider in Settings.";
-        } else if (em.toLowerCase().includes('produced no text')) {
-            userErrorMessage = "Error: The model returned no content. This can happen intermittently. Try Retry or rephrase your request, or switch models.";
-        } else if (em.toLowerCase().includes('safety') && em.toLowerCase().includes('block')) {
-            userErrorMessage = "Error: The response was blocked by the provider's safety filters. Try rephrasing your request or choose a different model.";
-        } else if (em.includes('No response received')) {
-            userErrorMessage = "Error: No response received from the API. Please check your API key and model selection.";
-        } else if (em.includes('fetch')) {
-            userErrorMessage = "Error: Network error. Please check your internet connection and try again.";
-        } else {
-            // Generic fallback; do NOT echo raw error.message into the chat
-            userErrorMessage = "Error: An unexpected error occurred. Please try again.";
-        }
-        return userErrorMessage;
-    };
 // Build request payload consistently
     const buildPayload = (promptText, priorMessages) => {
         const payload = {
@@ -699,7 +645,7 @@ export default function Home() {
         }
         if(!!llmSettings.useDeveloperKey){
             payload.provider = 'mistral';
-            payload.model = 'mistral-large-latest';
+            payload.model = 'mistral-medium-latest';
             payload.useDeveloperKey = true;
         }
         return payload; 
@@ -847,10 +793,7 @@ export default function Home() {
                         total: prev.total + u.totalTokens
                     }));
                 } else if (json.type === 'error') {
-                    try { console.debug("SSE error event received", { code: json.code, message: json.message }); } catch {}
-                    const err = new Error(json.message || 'Server error');
-                    if (json.code) err.code = json.code;
-                    throw err;
+                    throw new Error(json.message || 'Unknown error');
                 } else if (json.type === 'done') {
                     // no-op; finalization will occur after stream ends
                 }
@@ -928,11 +871,15 @@ export default function Home() {
 
         } catch (error) {
             if (error?.name === 'AbortError') {
-                // ignore aborted fetch
+                const cancelText = 'Request cancelled by user';
+                setMessages(prev => [...prev, { role: 'assistant', content: cancelText }]);
+                if (currentChatId) {
+                    try { await chatDB.addMessage(currentChatId, 'assistant', cancelText); } catch (dbError) { console.error('Failed to persist cancellation message:', dbError); }
+                }
                 return;
             }
             
-            const userErrorMessage = mapErrorToUserMessage(error);
+            const userErrorMessage = error.message;
             try { console.debug("Client mapped error", { code: error && error.code, message: error && error.message }); } catch {}
             
             console.error("API error occurred during chat request:", error);
@@ -1064,20 +1011,7 @@ export default function Home() {
                                         </button>
                                     </div>
                                 </div>
-                                <div id="chat-log" ref={chatLogRef}>
-                                    {messages.map((msg, index) => (
-                                        <div key={index} className={`message ${msg.role}`}>
-                                            <div className="content">
-                                                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {isLoading && (
-                                        <div className="message assistant">
-                                            <div className="loader"></div>
-                                        </div>
-                                    )}
-                                </div>
+                                <ChatLog messages={messages} isLoading={isLoading} chatLogRef={chatLogRef} />
                                 <div id="chat-input">
                                     <textarea
                                         value={input}

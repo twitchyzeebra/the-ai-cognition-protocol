@@ -23,38 +23,12 @@ const jsonError = (error, status = 400) => new Response(JSON.stringify({ error }
     status, headers: { 'Content-Type': 'application/json' }
 });
 
-// Environment-aware error payload for SSE
-const isDev = process.env.NODE_ENV === 'development';
-function safeErrorPayload(input) {
-    const raw = typeof input === 'string' ? input : ((input && input.message) ? input.message : '');
-    const rawStr = String(raw || '');
-    // Derive a stable error code from the raw error string so clients can map reliably even in production
-    let code = undefined;
-    const lower = rawStr.toLowerCase();
-    if (lower.includes('produced no text')) code = 'PROVIDER_NO_TEXT';
-    else if (lower.includes('safety') && lower.includes('block')) code = 'SAFETY_BLOCK';
-    else if (lower.includes('401')) code = 'AUTH_ERROR';
-    else if (lower.includes('429') || lower.includes('rate')) code = 'RATE_LIMIT';
-    else if (lower.includes('403')) code = 'FORBIDDEN';
-    else if (lower.includes('413')) code = 'REQUEST_TOO_LARGE';
-    else if (lower.includes('500')) code = 'SERVER_ERROR';
-
-    if (isDev) {
-        try {
-            return { message: rawStr.slice(0, 500), code };
-        } catch {
-            return { message: 'Error occurred', code };
-        }
-    }
-    return { message: 'An error occurred while generating a response.', code };
-}
-
 // Provider configuration (adapters + fallback models)
 const providers = {
     google: { adapter: Googleadapter, defaultModel: 'gemini-2.5-pro' },
     openai: { adapter: OpenAIAdapter, defaultModel: 'gpt-4o-mini' },
     anthropic: { adapter: AnthropicAdapter, defaultModel: 'claude-3-5-haiku-latest' },
-    mistral: { adapter: MistralAdapter, defaultModel: 'mistral-large-latest' }
+    mistral: { adapter: MistralAdapter, defaultModel: 'mistral-medium-latest' }
 };
 
 /**
@@ -91,7 +65,7 @@ function loadSystemPrompt(promptName = 'Modes') {
 
         const encryptionKey = process.env.SYSTEM_PROMPT_KEY;
         if (!encryptionKey || !/^[a-fA-F0-9]{64}$/.test(encryptionKey.trim())) {
-            console.log("SYSTEM_PROMPT_KEY is invalid or not found in .env, using fallback.");
+            console.error("Error: SYSTEM_PROMPT_KEY is invalid or not found in .env - using fallback prompt.");
             return fallbackPrompt;
         }
         
@@ -109,7 +83,7 @@ function loadSystemPrompt(promptName = 'Modes') {
         return decrypted;
 
     } catch (error) {
-        console.error('An error occurred during system prompt loading/decryption. Check SYSTEM_PROMPT_KEY and file integrity.');
+        console.error('An error occurred during system prompt loading/decryption.');
         return fallbackPrompt;
     }
 }
@@ -317,21 +291,23 @@ export async function POST(req) {
                             sendEvent('chunk', { text });
                         }
                     }
-                    if(abort){
+
+                    if (abort) {
                         console.log("Request aborted");
                     }
                     else if (!yieldedAny) {
                         console.warn("Adapter stream returned no text", { provider: p, model: effectiveModel });
-                        sendEvent('error', { message: `Provider=${p} produced no text. model=${effectiveModel}`, code: 'PROVIDER_NO_TEXT' });
+                        sendEvent('error', { message: `Provider=${p} produced no text. model=${effectiveModel}` });
                     } else if (!abort){
                         sendEvent('done', {});
                     }
-                } catch (error) {
-                    console.error("Error during stream generation. Check API key and model validity.", error?.message || error);
-                    sendEvent('error', safeErrorPayload(error));
+                } catch (error) {   
+                    console.warn("Error during stream generation.", error?.message || error);
+                    sendEvent('error', { message: error.message || 'Unknown error'});
+                    
                 } finally {
                     if(!abort){
-                    controller.close();
+                        try { controller.close(); } catch (e) { /* ignore */ }
                     }
                 }
             },

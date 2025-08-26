@@ -35,6 +35,7 @@ export default function Sidebar({
     const [renamingChat, setRenamingChat] = useState(null);
     const [renameValue, setRenameValue] = useState('');
     const [settingsMenuOpen, setSettingsMenuOpen] = useState(null);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
 
     const providerModelPresets = {
         google: [
@@ -218,12 +219,28 @@ export default function Sidebar({
                 setSettingsMenuOpen(null);
             }
         };
-        
+
         if (settingsMenuOpen) {
             document.addEventListener('click', handleClickOutside);
             return () => document.removeEventListener('click', handleClickOutside);
         }
     }, [settingsMenuOpen, confirmingDelete]);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            // Check if the click is outside the dropdown
+            const dropdown = document.querySelector('.custom-dropdown');
+            if (dropdown && dropdownOpen && !dropdown.contains(event.target)) {
+                setDropdownOpen(false);
+            }
+        };
+
+        if (dropdownOpen) {
+            document.addEventListener('click', handleClickOutside);
+            return () => document.removeEventListener('click', handleClickOutside);
+        }
+    }, [dropdownOpen]);
 
     const filteredHistory = historyQuery
         ? history.filter((chat) => (chat.title || '').toLowerCase().includes(historyQuery.toLowerCase()))
@@ -411,20 +428,77 @@ export default function Sidebar({
                             </span>
                         </h2>
                         {isPromptsVisible && (
-                            <ul className="history-list">
-                                {systemPrompts.map(prompt => (
-                                    <li 
-                                        key={prompt} 
-                                        className={`history-item ${prompt === selectedSystemPrompt ? 'active' : ''}`}
-                                        onClick={() => { 
-                                            onSelectSystemPrompt(prompt); 
-                                            try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
-                                        }}
+                            <div className="system-prompt-dropdown-container">
+                                {/* Custom dropdown with tooltip support */}
+                                <div className="custom-dropdown">
+                                    <button
+                                        className="dropdown-toggle"
+                                        onClick={() => setDropdownOpen(!dropdownOpen)}
                                     >
-                                        {promptLabel(prompt)}
-                                    </li>
-                                ))}
-                            </ul>
+                                        {promptLabel(selectedSystemPrompt || "Cognitive Tiers With Delivery")}
+                                        <span className="dropdown-arrow">{dropdownOpen ? '▲' : '▼'}</span>
+                                    </button>
+                                    {dropdownOpen && (
+                                        <ul className="dropdown-menu">
+                                            {systemPrompts.map(prompt => {
+                                                // Generate descriptions for each prompt
+                                                const promptDescriptions = {
+                                                    "Cognitive_Tiers_With_Delivery": "A comprehensive prompt that implements cognitive tiers with structured delivery for optimal response generation.",
+                                                    "Cognitive_Tiers": "The core cognitive tiers framework without delivery structure, focusing on pure cognitive processing.",
+                                                    "Cognitive_Tiers_Technical": "Technical implementation of cognitive tiers with detailed specifications for developers.",
+                                                    "Modes_Technical": "Technical modes framework for different operational states and processing approaches.",
+                                                    "Response_Generator": "Specialized prompt for generating high-quality responses with structured output.",
+                                                    "Classic_AI": "Traditional AI interaction model with standard question-answer format.",
+                                                    "Socratic_Lens": "Socratic method approach for exploratory, question-driven interactions.",
+                                                    "Socratic_Lens_Creative": "Creative variation of the Socratic approach with enhanced imaginative capabilities.",
+                                                    "Interactive_Story_Detective": "Interactive storytelling prompt designed for investigative narrative experiences."
+                                                };
+
+                                                // Clean the prompt name for matching
+                                                const cleanPromptName = prompt.replace(/_/g, '').replace(/-/g, '').replace(/\s+/g, '_');
+                                                const description = promptDescriptions[cleanPromptName] ||
+                                                                    "A system prompt designed for specialized interaction patterns.";
+
+                                                // Handle tooltip positioning
+                                                const handleMouseEnter = (e) => {
+                                                    const item = e.currentTarget;
+                                                    const tooltip = item.querySelector('.prompt-tooltip');
+
+                                                    // Get item position
+                                                    const rect = item.getBoundingClientRect();
+
+                                                    // Position tooltip to the right of the dropdown
+                                                    tooltip.style.left = `${rect.right + 12}px`;
+                                                    tooltip.style.top = `${rect.top + rect.height / 2 - 20}px`;
+                                                    tooltip.style.display = 'block';
+                                                };
+
+                                                const handleMouseLeave = (e) => {
+                                                    const item = e.currentTarget;
+                                                    const tooltip = item.querySelector('.prompt-tooltip');
+                                                    tooltip.style.display = 'none';
+                                                };
+
+                                                return (
+                                                    <li
+                                                        key={prompt}
+                                                        className={`dropdown-item ${prompt === selectedSystemPrompt ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            onSelectSystemPrompt(prompt);
+                                                            setDropdownOpen(false);
+                                                        }}
+                                                        onMouseEnter={handleMouseEnter}
+                                                        onMouseLeave={handleMouseLeave}
+                                                    >
+                                                        {promptLabel(prompt)}
+                                                        <div className="prompt-tooltip">{description}</div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    )}
+                                </div>
+                            </div>
                         )}
                     </div>
                     

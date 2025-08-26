@@ -357,3 +357,113 @@
   filter: grayscale(30%);
   transition: opacity 0.2s ease, filter 0.2s ease;
 }
+
+/* System Prompt Dropdown Styles */
+.system-prompt-dropdown-container {
+    padding: 0 16px 16px 16px;
+}
+
+.custom-dropdown {
+    position: relative;
+    width: 100%;
+}
+
+.dropdown-toggle {
+    width: 100%;
+    padding: 10px 12px;
+    background-color: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    cursor: pointer;
+    text-align: left;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s ease;
+}
+
+.dropdown-toggle:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-arrow {
+    margin-left: 8px;
+    font-size: 12px;
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: var(--container-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 1001;
+    margin-top: 4px;
+    padding: 4px 0;
+    list-style: none;
+}
+
+.dropdown-item {
+    padding: 8px 16px;
+    font-size: 14px;
+    color: var(--text-color);
+    cursor: pointer;
+    position: relative;
+    transition: background-color 0.15s ease;
+}
+
+.dropdown-item:hover {
+    background-color: var(--input-bg);
+}
+
+.dropdown-item.active {
+    background-color: var(--assistant-message-bg);
+    color: white;
+}
+
+/* Tooltip for prompt descriptions - using a separate tooltip element instead of pseudo-element */
+.tooltip-container {
+    position: relative;
+}
+
+.dropdown-item {
+    position: relative;
+}
+
+.dropdown-item:hover .prompt-tooltip {
+    display: block;
+}
+
+.prompt-tooltip {
+    display: none;
+    position: fixed;
+    left: auto;
+    right: auto;
+    background-color: var(--container-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    color: var(--text-color);
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 8px 12px;
+    max-width: 300px;
+    z-index: 1002;
+    pointer-events: none;
+    white-space: normal;
+}
+
+/* Mobile adjustments for dropdown */
+@media (max-width: 900px) {
+    .prompt-tooltip {
+        max-width: 250px;
+        font-size: 11px;
+    }
+}

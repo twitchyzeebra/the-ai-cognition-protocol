@@ -8,7 +8,7 @@ To communicate with the AI models, the application needs an API key. You have tw
 
 #### Using the Provided Key (For Testing Only)
 
-By default, a temporary testing key for the Mistral large model is provided. Please be aware that this key is for initial trials and you will frequently encounter the error "Error: Rate limit exceeded. Please wait a moment before trying again." The key will be removed soon, likely to be replaced with a subscription based model featuring a free tier. At this point, I highly recommend using your own key which will always be supported.
+By default, a temporary testing key for the Mistral medium model is provided. Please be aware that this key is for initial trials and is provided at my own cost. A subscription based model will be introduced when/if this gets popular, featuring a free tier. At this point, I highly recommend using your own key which will always be supported.
 
 #### Using Your Own API Key (Recommended)
 
@@ -20,7 +20,7 @@ You can bring your own key from a supported AI provider (Other providers coming 
         *   *(As of 19/08/25, Google provides a generous free tier for the Gemini 2.5 Pro model with a Google account.)*
     *   **Mistral AI:**
         *   Get your key at: **[console.mistral.ai/api-keys](https://console.mistral.ai/api-keys)**
-        *   *(As of 19/08/25, Mistral offers a free key with a very generous usage allowance with an account.)*
+        *   *(As of 19/08/25, Mistral offers a free key with a very generous usage allowance with an account. This is subject to model wide limits which seems to affect their medium model heavily.)*
 
 2.  **Configure your key in the application's sidebar.** Once you have your key, open the settings panel in the sidebar to enter it and select your desired model.
 
@@ -28,20 +28,23 @@ You can bring your own key from a supported AI provider (Other providers coming 
 
 This application allows you to choose from several distinct AI system prompts, each designed for a different type of analysis.
 
-*   **Modes**
-    *   This is the primary and recommended system prompt. It uses a sophisticated framework to analyze human relationships, communication, and cognitive patterns, providing deep, structured insights.
-
-*   **Modes Explain Simply + Modes Technical Explain Simply**
-    *   They are functionally identical to their respective documents, with the addition of "Delivery: Explain to the user simply". 
-
-*   **Modes Technical**
-    *   A highly detailed and technical version of "Modes". This is designed for researchers or advanced users who want to see a complex analysis.
-
-*   **Tiers**
+*   **Cognitive Tiers**
     *   This focuses on analyzing a situation through distinct "Tiers of Cognition"—from raw, uninterpreted data (T1) all the way to deep, synthesized insights (T5). It provides a layered breakdown of the thinking process.
 
-*   **Default**
-    *   A standard, helpful AI assistant without any specialized cognitive framework. This is useful as a baseline for comparison.
+*   **Cognitive Tiers With Delivery**
+    *   Takes the cognitive tiers analysis and translates it into a more human-friendly format. This is the default system prompt.
+
+*   **Cognitive Tiers Technical**
+    *   A more formal and technical cognitive tiers analysis. Designed for professionals and advanced users who want a more comphrehensive response.
+
+*   **Socratic Lens**
+    *   An alternative approach that is less structured than the cognitive tiers. It is a short list of rules that the AI follows.
+
+*   **Classic AI**
+    *   A standard, helpful AI assistant without any specialized cognitive framework. This is useful as a baseline for comparison. 
+
+*   **Modes and Variants**
+    *   Previously created documents that have the major issue of being too wordy (2200 tokens for Modes v2 to 9000 for Modes Technical v2). They are retained for reference.
 
 ## 🔒 Privacy and Data Management
 

@@ -38,7 +38,10 @@ This application allows you to choose from several distinct AI system prompts, e
     *   A more formal and technical cognitive tiers analysis. Designed for professionals and advanced users who want a more comphrehensive response.
 
 *   **Socratic Lens**
-    *   An alternative approach that is less structured than the cognitive tiers. It is a short list of rules that the AI follows.
+    *   An alternative approach that is less structured than the cognitive tiers. It is a short list of rules that the AI follows. It has an integrated creative mode that is triggered by prefixing your prompt with an asterisk (*). Ask the AI about the parameters it uses.
+
+*   **Interactive Story Detective**
+    *   A user guided narrative, to initiate interaction just type 'start'.
 
 *   **Classic AI**
     *   A standard, helpful AI assistant without any specialized cognitive framework. This is useful as a baseline for comparison. 

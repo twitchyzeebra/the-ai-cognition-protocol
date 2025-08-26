@@ -263,6 +263,10 @@ export default function Home() {
             if (savedPrompt && data.includes(savedPrompt)) {
                 setSelectedSystemPrompt(savedPrompt);
             }
+            if (savedPrompt && !data.includes(savedPrompt)){
+                localStorage.removeItem('selectedSystemPrompt');
+                setSelectedSystemPrompt('Cognitive Tiers With Delivery');
+            }
         } catch (error) {
             console.error('Failed to fetch system prompts:', error);
         }
@@ -369,7 +373,7 @@ export default function Home() {
                 setResourceContent('');
                 setIsChatCollapsed(true); // Chat panel minimized after reset
                 setIsResourceCollapsed(false);
-                setSelectedSystemPrompt('Default');
+                setSelectedSystemPrompt('Cognitive Tiers With Delivery');
                 setLlmSettings({ 
                     provider: 'google', 
                     model: '', 

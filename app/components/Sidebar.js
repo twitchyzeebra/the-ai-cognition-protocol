@@ -443,15 +443,16 @@ export default function Sidebar({
                                             {systemPrompts.map(prompt => {
                                                 // Generate descriptions for each prompt
                                                 const promptDescriptions = {
-                                                    "Cognitive_Tiers_With_Delivery": "A comprehensive prompt that implements cognitive tiers with structured delivery for optimal response generation.",
+                                                    "Cognitive_Tiers_With_Delivery": "A comprehensive prompt that implements cognitive tiers with structured delivery.",
                                                     "Cognitive_Tiers": "The core cognitive tiers framework without delivery structure, focusing on pure cognitive processing.",
-                                                    "Cognitive_Tiers_Technical": "Technical implementation of cognitive tiers with detailed specifications for developers.",
-                                                    "Modes_Technical": "Technical modes framework for different operational states and processing approaches.",
-                                                    "Response_Generator": "Specialized prompt for generating high-quality responses with structured output.",
-                                                    "Classic_AI": "Traditional AI interaction model with standard question-answer format.",
-                                                    "Socratic_Lens": "Socratic method approach for exploratory, question-driven interactions.",
-                                                    "Socratic_Lens_Creative": "Creative variation of the Socratic approach with enhanced imaginative capabilities.",
-                                                    "Interactive_Story_Detective": "Interactive storytelling prompt designed for investigative narrative experiences."
+                                                    "Cognitive_Tiers_Technical": "A more technical implementation of cognitive tiers.",
+                                                    "Modes_Technical_v2": "Previously designed framework (depreciated), detailed analysis with heavy token use.",
+                                                    "Modes_v2": "Previously designed framework (depreciated), analysis with moderate token use.",
+                                                    "Modes": "Previously designed framework (depreciated), analysis with moderate-high token use.",
+                                                    "Response_Generator": "Specialized prompt for generating responses to reddit posts. Designed to be used as follows: Socratic Lens analysis of original reddit post, then run 'Expository Trace' using Cognitive Tiers, then use this system prompt with 'Generate Responses'",
+                                                    "Classic_AI": "Traditional AI 'You are a friendly helpful assistant'.",
+                                                    "Socratic_Lens": "A short list of rules for the AI to follow. Includes a creative mode (initiated by prefixing your message with *, ask the AI for more details).",
+                                                    "Interactive_Story_Detective": "Interactive storytelling prompt. Initiate with 'Start'."
                                                 };
 
                                                 // Clean the prompt name for matching

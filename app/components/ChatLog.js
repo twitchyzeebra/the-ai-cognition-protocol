@@ -10,7 +10,7 @@ const Message = React.memo(function Message({ msg }) {
     return (
         <div className={`message ${msg.role}`}>
             <div className="content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{typeof msg.content === 'string' ? msg.content : (msg.content == null ? '' : (typeof msg.content === 'object' ? JSON.stringify(msg.content) : String(msg.content)))}</ReactMarkdown>
             </div>
         </div>
     );

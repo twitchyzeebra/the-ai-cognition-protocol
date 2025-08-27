@@ -452,6 +452,7 @@ export default function Sidebar({
                                                     "Response_Generator": "Specialized prompt for generating responses to reddit posts. Designed to be used as follows: Socratic Lens analysis of original reddit post, then run 'Expository Trace' using Cognitive Tiers, then use this system prompt with 'Generate Responses'",
                                                     "Classic_AI": "Traditional AI 'You are a friendly helpful assistant'.",
                                                     "Socratic_Lens": "A short list of rules for the AI to follow. Includes a creative mode (initiated by prefixing your message with *, ask the AI for more details).",
+                                                    "Socratic_Lens_v2": "A short list of rules for the AI to follow (v2 adds epistemic state and black swan analysis). Includes a creative mode (initiated by prefixing your message with *, ask the AI for more details).",
                                                     "Interactive_Story_Detective": "Interactive storytelling prompt. Initiate with 'Start'."
                                                 };
 

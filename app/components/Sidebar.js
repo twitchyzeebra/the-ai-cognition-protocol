@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 export default function Sidebar({ 
     history, 
@@ -51,9 +52,11 @@ export default function Sidebar({
             'o4-mini'
         ],
         anthropic: [
-            'claude-3-5-sonnet-latest',
-            'claude-3-5-haiku-latest',
-            'claude-3-opus-latest'
+            'claude-sonnet-4-5',
+            'claude-sonnet-4-0',
+            'claude-opus-4-0', 
+            'claude-3-7-sonnet-latest',
+            'claude-3-5-haiku-latest'
         ],
         mistral: [
             'mistral-large-latest',

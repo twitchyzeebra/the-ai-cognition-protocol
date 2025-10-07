@@ -21,6 +21,9 @@ You can bring your own key from a supported AI provider (Other providers coming 
     *   **Mistral AI:**
         *   Get your key at: **[console.mistral.ai/api-keys](https://console.mistral.ai/api-keys)**
         *   *(As of 19/08/25, Mistral offers a free key with a very generous usage allowance with an account. This is subject to model wide limits which seems to affect their medium model heavily.)*
+    *   **Anthropic/Claude AI:**
+        *   Get your key at: **[console.anthropic.com/dashboard](https://console.anthropic.com/dashboard)**
+        *   *(Costs $5.5 US dollars to obtain a key. This gives you $5 US of credit to use.)*
 
 2.  **Configure your key in the application's sidebar.** Once you have your key, open the settings panel in the sidebar to enter it and select your desired model.
 

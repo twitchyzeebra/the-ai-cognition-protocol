@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import Sidebar from './components/Sidebar';
 import chatDB from '../lib/database';
 import ChatLog from './components/ChatLog';
+import Link from 'next/link';
 
 export default function Home() {
     const [messages, setMessages] = useState([]);
@@ -971,6 +972,11 @@ export default function Home() {
                             >
                                 Start talking with the AI
                             </button>
+                            <Link href="/prompting-examples">
+                                <button className="landing-option-btn">
+                                    Browse Prompting Examples
+                                </button>
+                            </Link>
                             
                         </div>
 

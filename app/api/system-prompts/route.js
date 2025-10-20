@@ -11,6 +11,7 @@ export async function GET() {
         const prompts = files
             .filter(file => file.endsWith('.json'))
             .map(file => file.replace(/\.json$/, ''));
+        prompts.push('Custom Prompt');
         return NextResponse.json(prompts);
     } catch (error) {
         console.error('Failed to get system prompts:', error);

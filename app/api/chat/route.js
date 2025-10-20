@@ -88,34 +88,6 @@ function loadSystemPrompt(promptName = 'Modes') {
     }
 }
 
-// Learning Resources augmentation utilities
-let learningResourcesCache = null;
-
-function ensureLearningResourcesCache() { 
-    if (learningResourcesCache) return learningResourcesCache;
-    try {
-        const dir = path.join(process.cwd(), 'learning-resources');
-        const filenames = fs.readdirSync(dir).filter(f => f.toLowerCase().endsWith('.md'));
-        const map = new Map();
-        for (const filename of filenames) {
-            const slug = filename.replace(/\.md$/, '');
-            const title = slug.replace(/-/g, ' ');
-            let content = '';
-            try {
-                content = fs.readFileSync(path.join(dir, filename), 'utf8');
-            } catch (e) {
-                console.warn(`Failed reading learning resource ${filename}:`, e?.message || e);
-            }
-            map.set(slug.toLowerCase(), { slug, title, content });
-        }
-        learningResourcesCache = map;
-    } catch (e) {
-        console.warn('Unable to load learning resources directory:', e?.message || e);
-        learningResourcesCache = new Map();
-    }
-    return learningResourcesCache;
-}
-
 function normalizeText(s) {
     return (s || '').toString().toLowerCase();
 }
@@ -129,60 +101,6 @@ function truncateText(s, max) {
  * Builds an index of learning resources and conditionally includes full content
  * if the prompt/history mention a resource by title or slug.
  */
-function buildLearningResourcesAugmentation(prompt, normalizedHistory) {
-    const cache = ensureLearningResourcesCache();
-    const items = Array.from(cache.values());
-    if (!items.length) {
-        return { indexText: '', includedText: '', includedSlugs: [] };
-    }
-
-    const indexLines = items.map(it => `- ${it.title} (slug: ${it.slug})`);
-    const indexText = [
-        '[Learning Resources Index]',
-        'You have access to internal learning resources. Use them to guide your responses.',
-        'If you need the full text of a resource, explicitly mention its exact title or slug in your reasoning or reply (e.g., "Metacognitive Tiers" or its slug). The server will inject the relevant content into the system context automatically.',
-        'Only rely on sections that are relevant to the user’s query. Prefer citing headings when appropriate.',
-        ...indexLines
-    ].join('\n');
-
-    const historyText = Array.isArray(normalizedHistory)
-        ? normalizedHistory.map(m => m?.content || '').join('\n')
-        : '';
-    const corpus = normalizeText([prompt, historyText].filter(Boolean).join('\n'));
-    const included = [];
-
-    for (const it of items) {
-        const titleL = normalizeText(it.title);
-        const slugL = normalizeText(it.slug);
-        if (corpus.includes(titleL) || corpus.includes(slugL)) {
-            included.push(it);
-        }
-    }
-
-    // Safety caps to avoid blowing context
-    const MAX_TOTAL = 20000;
-    const MAX_PER_DOC = 12000;
-
-    let total = 0;
-    const parts = [];
-    for (const it of included) {
-        const remaining = Math.max(0, MAX_TOTAL - total);
-        if (remaining <= 0) break;
-        const take = Math.min(MAX_PER_DOC, remaining);
-        const body = truncateText(it.content, take);
-        total += body.length;
-        parts.push([
-            `[Learning Resource: ${it.title} | slug: ${it.slug}]`,
-            '---',
-            body
-        ].join('\n'));
-    }
-
-    const includedText = parts.length ? parts.join('\n\n') : '';
-    const includedSlugs = included.map(it => it.slug);
-
-    return { indexText, includedText, includedSlugs };
-}
 
 // Next.js API Route for streaming chat responses (Node.js runtime)
 export async function POST(req) {
@@ -195,7 +113,7 @@ export async function POST(req) {
             return jsonError('Invalid JSON request body');
         }
 
-        const { prompt, history, systemPrompt: selectedPrompt, provider, apiKey, model, temperature } = requestData;
+        const { prompt, history, systemPrompt: selectedPrompt, customPrompt, provider, apiKey, model, temperature } = requestData;
         const p = (provider || 'google').toLowerCase().trim();
         const keySan = requestData.useDeveloperKey ? process.env.MISTRAL_API_KEY?.trim() : apiKey?.trim();
         const modelSan = (model || '').trim();
@@ -217,7 +135,7 @@ export async function POST(req) {
         
         
         // Basic validation only for now
-        if (keySan && keySan.length > 1000) {
+        if (keySan && keySan.length > 150) {
             return jsonError('API key too long', 413);
         }
         if (Array.isArray(history)) {
@@ -225,8 +143,13 @@ export async function POST(req) {
             const total = history.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
             if (total > 2000000) return jsonError(`History too long. Maximum 2000000 characters total allowed.`, 413);
         }
-
-        const baseSystemInstruction = loadSystemPrompt(selectedPrompt);
+        let baseSystemInstruction;
+        if (selectedPrompt === 'Custom Prompt') {
+            baseSystemInstruction = customPrompt;
+        }
+        else{
+            baseSystemInstruction = loadSystemPrompt(selectedPrompt);
+        }
 
         // Get provider config and validate
         const config = providers[p];
@@ -241,11 +164,7 @@ export async function POST(req) {
             content: (m.content || (m.parts?.[0]?.text || '')).toString()
         })) : [];
 
-        // Build learning-resources augmentation (index + conditional inclusion)
-        const learningCtx = buildLearningResourcesAugmentation(prompt, normalizedHistory);
-        const finalSystemInstruction = [baseSystemInstruction].filter(Boolean).join('\n\n'); //, learningCtx.indexText, learningCtx.includedText] Removed temporarily for testing
-           // .filter(Boolean)
-           // .join('\n\n');
+        const finalSystemInstruction = [baseSystemInstruction].filter(Boolean).join('\n\n'); 
 
         // Create a ReadableStream to pipe the AI response via adapter
         const stream = new ReadableStream({
@@ -323,6 +242,6 @@ export async function POST(req) {
 
     } catch (error) {
         console.error("Handler error - request processing failed");
-        return jsonError('Internal Server Error', 500);
+        return jsonError('Internal Server Error: ${error.message}', 500);
     }
 }

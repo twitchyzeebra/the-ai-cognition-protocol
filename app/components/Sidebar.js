@@ -14,6 +14,7 @@ export default function Sidebar({
     learningResources,
     onSelectResource,
     onDeleteChat,
+    onCustomPromptEdit,
     onRenameChat,
     systemPrompts,
     selectedSystemPrompt,
@@ -386,12 +387,11 @@ export default function Sidebar({
                                     ))}
                                 </ul>
                                 <div className="sidebar-actions">
-                                    <button onClick={() => onDownload('json')} className="sidebar-btn">Download Chat (JSON)</button>
                                     <button onClick={() => onDownload('md')} className="sidebar-btn">Export Chat (Markdown)</button>
                                     <label htmlFor="upload-btn" className="sidebar-btn">
-                                        Upload Chat (.json or .md)
+                                        Upload Chat
                                     </label>
-                                    <input id="upload-btn" type="file" accept=".json,.md,.markdown,text/markdown" onChange={onUpload} style={{ display: 'none' }} />
+                                    <input id="upload-btn" type="file" accept=".md,.markdown,text/markdown" onChange={onUpload} style={{ display: 'none' }} />
                                 </div>
                             </>
                         )}
@@ -503,6 +503,16 @@ export default function Sidebar({
                                         </ul>
                                     )}
                                 </div>
+                            
+                                {selectedSystemPrompt === 'Custom Prompt' && (
+                                     <button 
+                                         onClick={onCustomPromptEdit} 
+                                         className="sidebar-btn"
+                                         style={{ marginTop: '12px', width: '100%' }}
+                                     >
+                                         ✏️ Edit Custom Prompt
+                                     </button>
+                            )}
                             </div>
                         )}
                     </div>

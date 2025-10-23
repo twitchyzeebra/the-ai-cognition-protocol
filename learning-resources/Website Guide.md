@@ -43,8 +43,14 @@ This application allows you to choose from several distinct AI system prompts, e
 *   **Socratic Lens**
     *   An alternative approach that is less structured than the cognitive tiers. It is a short list of rules that the AI follows. It has an integrated creative mode that is triggered by prefixing your prompt with an asterisk (*). Ask the AI about the parameters it uses.
 
+*   **Hydra**
+    *   An very altnerative approach that combines operational modes and cognitive tiers. Output can be refactored using SYNTHESIZE_OUTPUT_FOR: {AUDIENCE} (e.g. Child, Expert, Reddit).    
+
+*   **Hydra With Delivery**
+    *   Applies SYNTHESIZE_OUTPUT_FOR: Young Adult by default.  
+
 *   **Interactive Story Detective**
-    *   A user guided narrative, to initiate interaction just type 'start'.
+    *   A user guided narrative with set premise, to initiate interaction just type 'start'.
 
 *   **Classic AI**
     *   A standard, helpful AI assistant without any specialized cognitive framework. This is useful as a baseline for comparison. 
@@ -57,7 +63,7 @@ This application allows you to choose from several distinct AI system prompts, e
 Your privacy and data control are paramount.
 
 *   **Serverless Architecture:** Your prompts are sent directly from your browser to the AI provider you select (e.g., Google or Mistral). No intermediate server logs or stores your conversations.
-*   **Local Storage:** All your chat history and settings are stored exclusively on your own computer in your local storage.
+*   **Local Storage:** All your chat history and settings are stored exclusively on your own computer.
 *   **Full Control:** You can permanently delete all your locally stored data at any time using the `Reset Application State` button in the sidebar.
 *   **Portability:** You can easily back up your conversations by downloading them, or import previous chats from a file.
 

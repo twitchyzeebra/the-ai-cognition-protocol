@@ -115,7 +115,7 @@ export async function POST(req) {
 
         const { prompt, history, systemPrompt: selectedPrompt, customPrompt, provider, apiKey, model, temperature } = requestData;
         const p = (provider || 'google').toLowerCase().trim();
-        const keySan = requestData.useDeveloperKey ? process.env.MISTRAL_API_KEY?.trim() : apiKey?.trim();
+        const keySan = requestData.useDeveloperKey ? process.env.ANTHROPIC_API_KEY?.trim() : apiKey?.trim();
         const modelSan = (model || '').trim();
         const tempNum = Number.isFinite(Number(temperature)) ? Number(temperature) : undefined;
         let temperatureUsed = undefined;

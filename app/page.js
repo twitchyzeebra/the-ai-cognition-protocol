@@ -567,8 +567,8 @@ export default function Home() {
             payload.customPrompt = customPrompt;
         }
         if(!!llmSettings.useDeveloperKey){
-            payload.provider = 'mistral';
-            payload.model = 'mistral-medium-latest';
+            payload.provider = 'anthropic';
+            payload.model = 'claude-sonnet-4-5';
             payload.useDeveloperKey = true;
         }
         return payload; 

@@ -22,7 +22,7 @@ export default function Home() {
     const [systemPrompts, setSystemPrompts] = useState([]);
     const [customPrompt, setCustomPrompt] = useState('');
     const [customPromptModelCollapsed, setIsCustomPromptModelCollapsed] = useState(true);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Cognitive Tiers With Delivery'); // Default prompt
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Hydra'); // Default prompt
     const [llmSettings, setLlmSettings] = useState({ 
         provider: 'google', 
         models: { google: '', openai: '', anthropic: '', mistral: '' },

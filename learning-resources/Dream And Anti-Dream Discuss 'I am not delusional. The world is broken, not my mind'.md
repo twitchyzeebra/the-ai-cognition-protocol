@@ -1,6 +1,6 @@
 # I am not delusional
 The world is broken
-Not my min
+Not my mind
 
 ## User
 

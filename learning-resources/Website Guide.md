@@ -15,13 +15,13 @@ By default, a temporary testing key for the Antropic Models, currently set to so
 You can bring your own key from a supported AI provider (Other providers coming soon™). This gives you direct control over your usage and access to different models.
 
 1.  **Obtain a key from one of the following providers:**
-    *   **Google Gemini:**
+    *   **Google Gemini: NO WORK**
         *   Get your key at: **[aistudio.google.com/apikey](https://aistudio.google.com/apikey)**
         *   *(As of 11/DEC/25, There is no free tier for google keys. Also it currently DOES NOT WORK, I will fix it soon.)*
-    *   **Mistral AI:**
+    *   **Mistral AI: IDK IF IT WORKS ATM**
         *   Get your key at: **[console.mistral.ai/api-keys](https://console.mistral.ai/api-keys)**
         *   *(As of 19/08/25, Mistral offers a free key with a very generous usage allowance with an account. This is subject to model wide limits which seems to affect their medium model heavily.)*
-    *   **Anthropic/Claude AI:**
+    *   **Anthropic/Claude AI: WORKS AND IS WHAT I USE**
         *   Get your key at: **[console.anthropic.com/dashboard](https://console.anthropic.com/dashboard)**
         *   *(Costs $5.5 US dollars to obtain a key. This gives you $5 US of credit to use. Currently this is the most recommended pathway, and works as intended as of 11/DEC/25)*
 

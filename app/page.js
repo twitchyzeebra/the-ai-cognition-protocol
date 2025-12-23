@@ -891,9 +891,9 @@ export default function Home() {
                             >
                                 Start talking with the AI
                             </button>
-                            <Link href="/prompting-examples">
-                                <button className="landing-option-btn">
-                                    Browse Prompting Examples
+                            <Link href="/resources">
+                                <button className="resources-link">
+                                    📚 View Learning Resources
                                 </button>
                             </Link>
                             

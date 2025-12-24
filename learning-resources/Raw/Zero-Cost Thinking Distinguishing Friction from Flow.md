@@ -1,4 +1,6 @@
-# Defining 0 Cost Thoughts
+---
+complexity: intermediate
+---
 
 ## User
 

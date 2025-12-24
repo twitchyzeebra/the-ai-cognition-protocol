@@ -1,4 +1,6 @@
-# FRAME SHIFT
+---
+complexity: intermediate
+---
 ## *How to See the Hidden Structure of Reality (And Use It to Transform Your Life)*
 
 ---

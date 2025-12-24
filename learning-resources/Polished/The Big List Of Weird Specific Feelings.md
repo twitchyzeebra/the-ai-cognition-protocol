@@ -1,4 +1,6 @@
-# The valence that AI attaches to words, comes solel
+---
+complexity: intermediate
+---
 
 ## User
 

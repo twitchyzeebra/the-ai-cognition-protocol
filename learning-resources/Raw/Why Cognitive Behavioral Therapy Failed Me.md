@@ -1,4 +1,6 @@
-# Council of Flavors, discuss - "tired brain + low b
+---
+complexity: intermediate
+---
 
 ## User
 

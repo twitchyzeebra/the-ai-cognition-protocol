@@ -17,6 +17,7 @@
     "@mistralai/mistralai": "^1.7.5",
     "dexie": "^4.0.11",
     "dotenv": "^17.2.1",
+    "gray-matter": "^4.0.3",
     "html2pdf.js": "^0.12.1",
     "next": "^16.0.7",
     "openai": "^4.56.0",

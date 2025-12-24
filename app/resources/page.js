@@ -14,6 +14,7 @@ export default function ResourcesPage() {
     const [loadingContent, setLoadingContent] = useState(false);
     const [downloadingPdf, setDownloadingPdf] = useState(false);
     const contentRef = useRef(null);
+    const [activeTab, setActiveTab] = useState('polished');
 
     useEffect(() => {
         fetchResources();
@@ -115,12 +116,27 @@ export default function ResourcesPage() {
                     <Link href="/" className="back-link">← Back to Chat</Link>
                     <h1>Learning Resources</h1>
                     <p className="subtitle">Explore metacognitive frameworks and insights</p>
+                    <div className="tabs-container">
+                         <button 
+                             className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}
+                             onClick={() => setActiveTab('polished')}
+                         >
+                             📖 Polished Documents
+                         </button>
+                         <button 
+                             className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
+                             onClick={() => setActiveTab('raw')}
+                         >
+                             🔧 Raw Documents
+                         </button>
+                     </div>
                 </div>
+
             </header>
 
             <main className="resources-main">
                 <div className="cards-grid">
-                    {resources.map((resource) => (
+                    {resources.filter(resource => resource.category === activeTab).map((resource) => (
                         <div
                             key={resource.slug}
                             className="resource-card"
@@ -128,6 +144,11 @@ export default function ResourcesPage() {
                         >
                             <div className="card-icon">📚</div>
                             <h3 className="card-title">{resource.title}</h3>
+                            {resource.complexity && (
+                                <div className={`complexity-badge ${resource.complexity}`}>
+                                    {resource.complexity}
+                                </div>
+                            )}
                             <div className="card-footer">
                                 <span className="click-hint">Click to read →</span>
                             </div>

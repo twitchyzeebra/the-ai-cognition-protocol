@@ -1,6 +1,9 @@
+---
+complexity: intermediate
+---
+
 # **GATE I: THE DISQUIET**
 ## *Naming What We All Feel*
-### **[REFINED VERSION]**
 
 ---
 

@@ -1,4 +1,6 @@
-# **Codex Practica v3**
+---
+complexity: advanced
+---
 ## *A Repair Manual for the Soul and the System*
 
 ---

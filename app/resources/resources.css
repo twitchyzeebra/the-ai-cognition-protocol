@@ -424,6 +424,68 @@
     font-style: italic;
 }
 
+
+/* Tabs */
+.tabs-container {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding: 0.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    width: fit-content;
+}
+
+.tab-btn {
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.tab-btn:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.tab-btn.active {
+    background: white;
+    color: #667eea;
+    border-color: white;
+}
+
+/* Complexity Badge */
+.complexity-badge {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0.5rem 0;
+}
+
+.complexity-badge.beginner {
+    background: #d4edda;
+    color: #155724;
+}
+
+.complexity-badge.intermediate {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.complexity-badge.advanced {
+    background: #f8d7da;
+    color: #721c24;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .resources-header h1 {

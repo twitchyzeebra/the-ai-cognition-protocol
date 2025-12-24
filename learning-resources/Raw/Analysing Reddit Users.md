@@ -1,3 +1,7 @@
+---
+complexity: beginner
+---
+
 >COUNCIL_CONVENES
 **Subject:** The Front Page of the Internet (Reddit)
 **Objective:** Deconstruct the "Hivemind" into its component algorithms.

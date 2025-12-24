@@ -1,4 +1,6 @@
-# Explain why people stay in abusive relationships. 
+---
+complexity: intermediate
+---
 
 ## User
 

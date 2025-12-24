@@ -1,4 +1,6 @@
-# A being has no emotional control, but very strong 
+---
+complexity: intermediate
+---
 
 ## User
 

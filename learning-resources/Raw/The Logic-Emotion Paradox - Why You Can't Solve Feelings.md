@@ -1,4 +1,6 @@
-# Council of flavors, deliberate "Strong logical con
+---
+complexity: intermediate
+---
 
 ## User
 

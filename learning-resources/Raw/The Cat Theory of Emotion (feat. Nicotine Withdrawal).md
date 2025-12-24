@@ -1,4 +1,6 @@
-# Emotional Control Strategies - Its A Cat
+---
+complexity: intermediate
+---
 
 ## User
 

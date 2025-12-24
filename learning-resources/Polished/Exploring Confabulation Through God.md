@@ -1,4 +1,6 @@
-# Confabulate reasons why confabulation is benificia
+---
+complexity: intermediate
+---
 
 ## User
 

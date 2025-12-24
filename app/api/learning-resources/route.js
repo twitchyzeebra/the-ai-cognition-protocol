@@ -24,7 +24,8 @@ export async function GET() {
                     slug: `Polished/${slug}`,
                     title: slug,
                     category: 'polished',
-                    complexity: data.complexity 
+                    complexity: data.complexity,
+                    chattable: data.chattable
                 });
             });
         }
@@ -41,7 +42,8 @@ export async function GET() {
                     slug: `Raw/${slug}`,
                     title: slug,
                     category: 'raw',
-                    complexity: data.complexity 
+                    complexity: data.complexity,
+                    chattable: data.chattable 
                 });
             });
         }

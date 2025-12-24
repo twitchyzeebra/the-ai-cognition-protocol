@@ -143,7 +143,7 @@
     justify-content: center;
     align-items: center;
     z-index: 1000;
-    padding: 1rem;
+    padding: 0.5rem;
     animation: fadeIn 0.2s ease-in;
 }
 
@@ -152,7 +152,7 @@
     color: #333;
     border-radius: 16px;
     max-width: 900px;
-    max-height: 90vh;
+    max-height: 96vh;
     width: 100%;
     display: flex;
     flex-direction: column;
@@ -161,7 +161,7 @@
 }
 
 .modal-header {
-    padding: 1.5rem 2rem;
+    padding: 1rem 1.5rem;
     border-bottom: 1px solid #eee;
     display: flex;
     justify-content: space-between;
@@ -172,7 +172,7 @@
 
 .modal-header h2 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.35rem;
     font-weight: 600;
 }
 
@@ -214,6 +214,17 @@
 .download-btn .btn-text {
     font-size: 0.85rem;
     font-weight: 600;
+}
+
+.chat-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: rgba(102, 126, 234, 0.5);
+}
+
+.chat-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7c91f7 0%, #8d5bb5 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .close-button {

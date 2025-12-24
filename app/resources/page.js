@@ -115,13 +115,13 @@ export default function ResourcesPage() {
                 <div className="header-content">
                     <Link href="/" className="back-link">← Back to Chat</Link>
                     <h1>Learning Resources</h1>
-                    <p className="subtitle">I explore the human mind in collaboration with AI. Here you will find our creations. Proceed with caution. This isn't standard self-help. Some of these documents explore the failure states of the human mind and the edges of AI capability. They can be intense. They can be destabilizing. My current system prompt for AI - The Flavoured System - uses multiple "personalities" and blends them as necessary; most of the current documents were made with this. Who am I? I am neurodivergent. I am mildly autistic. I am a man on a journey. I started using AI at the start of 2025 after a breakup. AI has taught me how to transform what I could not explain into words, legible words! And I hope that these documents can help you do the same. While these documents are generally heavily technical, I am currently working on making more digestible and useful documents.</p>
+                    <p className="subtitle">I explore the human mind in collaboration with AI. Here you will find our creations. Proceed with caution. This isn't standard self-help. Some of these documents explore the failure states of the human mind and the edges of AI capability. They can be intense. They can be destabilizing. My current system prompt for AI - The Flavoured System - uses multiple "personalities" and blends them as necessary; most of the current documents were made with this. Who am I? I am neurodivergent. I am mildly autistic. I am a man on a journey. I started using AI at the start of 2025 after a breakup. AI has taught me how to transform what I could not explain into words, legible words! And I hope that these documents can help you do the same. While these documents are generally heavily technical, I am currently working on making more digestible and useful documents. The documents are split into Polished and Raw, Raw is more technical analysis and personal stuff, while Polished has been designed with you in mind.</p>
                     <div className="tabs-container">
                          <button 
                              className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}
                              onClick={() => setActiveTab('polished')}
                          >
-                             📖 Polished Documents
+                             📖 Somewhat Polished Documents
                          </button>
                          <button 
                              className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}

@@ -1,4 +1,4 @@
-# Oh, it is the time of year. Where the jub comes ou
+# The Jub Dialogue
 
 ## User
 

@@ -892,7 +892,7 @@ export default function Home() {
                                 Start talking with the AI
                             </button>
                             <Link href="/resources">
-                                <button className="resources-link">
+                                <button className="landing-option-btn">
                                     📚 View Learning Resources
                                 </button>
                             </Link>

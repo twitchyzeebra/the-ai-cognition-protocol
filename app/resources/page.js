@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './resources.css';
 
 export default function ResourcesPage() {
@@ -9,6 +11,9 @@ export default function ResourcesPage() {
     const [loading, setLoading] = useState(true);
     const [selectedResource, setSelectedResource] = useState(null);
     const [resourceContent, setResourceContent] = useState('');
+    const [loadingContent, setLoadingContent] = useState(false);
+    const [downloadingPdf, setDownloadingPdf] = useState(false);
+    const contentRef = useRef(null);
 
     useEffect(() => {
         fetchResources();
@@ -28,6 +33,7 @@ export default function ResourcesPage() {
 
     const handleCardClick = async (resource) => {
         setSelectedResource(resource);
+        setLoadingContent(true);
         try {
             const response = await fetch(`/api/learning-resources/${encodeURIComponent(resource.slug)}`);
             const data = await response.json();
@@ -35,12 +41,63 @@ export default function ResourcesPage() {
         } catch (error) {
             console.error('Failed to fetch resource content:', error);
             setResourceContent('Failed to load resource content.');
+        } finally {
+            setLoadingContent(false);
         }
     };
 
     const closeModal = () => {
         setSelectedResource(null);
         setResourceContent('');
+        setLoadingContent(false);
+    };
+
+    const downloadMarkdown = () => {
+        if (!selectedResource || !resourceContent) return;
+
+        const blob = new Blob([resourceContent], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${selectedResource.slug}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const downloadPdf = async () => {
+        if (!selectedResource || !contentRef.current) return;
+
+        setDownloadingPdf(true);
+
+        try {
+            const html2pdf = (await import('html2pdf.js')).default;
+            const element = contentRef.current;
+            const opt = {
+                margin: [0.5, 0.5, 0.5, 0.5],
+                filename: `${selectedResource.slug}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { 
+                    scale: 2,
+                    useCORS: true,
+                    letterRendering: true
+                },
+                jsPDF: { 
+                    unit: 'in', 
+                    format: 'letter', 
+                    orientation: 'portrait' 
+                },
+                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+            };
+
+            await html2pdf().set(opt).from(element).save();
+        } catch (error) {
+            console.error('Failed to generate PDF:', error);
+            alert('Failed to generate PDF. Please try again.');
+        } finally {
+            setDownloadingPdf(false);
+        }
     };
 
     if (loading) {
@@ -84,10 +141,43 @@ export default function ResourcesPage() {
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
                             <h2>{selectedResource.title}</h2>
-                            <button className="close-button" onClick={closeModal}>×</button>
+                            <div className="modal-actions">
+                                <button 
+                                    className="download-btn" 
+                                    onClick={downloadMarkdown}
+                                    title="Download as Markdown"
+                                    disabled={loadingContent}
+                                >
+                                    <span className="btn-icon">📄</span>
+                                    <span className="btn-text">MD</span>
+                                </button>
+                                <button 
+                                    className="download-btn" 
+                                    onClick={downloadPdf}
+                                    title="Download as PDF"
+                                    disabled={loadingContent || downloadingPdf}
+                                >
+                                    <span className="btn-icon">📑</span>
+                                    <span className="btn-text">
+                                        {downloadingPdf ? 'Generating...' : 'PDF'}
+                                    </span>
+                                </button>
+                                <button className="close-button" onClick={closeModal}>×</button>
+                            </div>
                         </div>
                         <div className="modal-body">
-                            <pre className="resource-text">{resourceContent}</pre>
+                            {loadingContent ? (
+                                <div className="content-loader">
+                                    <div className="loader"></div>
+                                    <p>Loading content...</p>
+                                </div>
+                            ) : (
+                                <div className="markdown-content" ref={contentRef}>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {resourceContent}
+                                    </ReactMarkdown>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

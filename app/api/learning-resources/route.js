@@ -21,7 +21,7 @@ export async function GET() {
                 const fileContent = fs.readFileSync(filePath, 'utf-8');
                 const { data } = matter(fileContent);
                 resources.push({
-                    slug: `polished/${slug}`,
+                    slug: `Polished/${slug}`,
                     title: slug,
                     category: 'polished',
                     complexity: data.complexity 
@@ -38,7 +38,7 @@ export async function GET() {
                 const fileContent = fs.readFileSync(filePath, 'utf-8');
                 const { data } = matter(fileContent);
                 resources.push({
-                    slug: `raw/${slug}`,
+                    slug: `Raw/${slug}`,
                     title: slug,
                     category: 'raw',
                     complexity: data.complexity 

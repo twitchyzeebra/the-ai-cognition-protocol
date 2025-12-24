@@ -161,7 +161,7 @@
 }
 
 .modal-header {
-    padding: 1rem 1.5rem;
+    padding: 1rem 1.3rem;
     border-bottom: 1px solid #eee;
     display: flex;
     justify-content: space-between;
@@ -172,7 +172,7 @@
 
 .modal-header h2 {
     margin: 0;
-    font-size: 1.35rem;
+    font-size: 1.25rem;
     font-weight: 600;
 }
 

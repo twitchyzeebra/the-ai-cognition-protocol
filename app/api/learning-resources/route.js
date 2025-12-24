@@ -7,8 +7,8 @@ export async function GET() {
     try {
         const postsDirectory = path.join(process.cwd(), 'learning-resources');
         
-        const polishedDir = path.join(postsDirectory, 'polished');
-        const rawDir = path.join(postsDirectory, 'raw');
+        const polishedDir = path.join(postsDirectory, 'Polished');
+        const rawDir = path.join(postsDirectory, 'Raw');
         
         const resources = [];
         

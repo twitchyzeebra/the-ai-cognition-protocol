@@ -386,7 +386,7 @@ Moving from "I understand this" to "anyone can learn this" to "this exists indep
 
 The phases aren't strictly sequential. They form an iterative cycle:
 
-![Phase Image](PDI.png)
+![Phase Image](/images/PDI.png)
 
 **Phase 4 often reveals:**
 - Need for more Phase 1 (gaps in exploration)

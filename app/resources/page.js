@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './resources.css';
 
+
 export default function ResourcesPage() {
     const [resources, setResources] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -15,6 +16,7 @@ export default function ResourcesPage() {
     const [downloadingPdf, setDownloadingPdf] = useState(false);
     const contentRef = useRef(null);
     const [activeTab, setActiveTab] = useState('polished');
+    
 
     useEffect(() => {
         fetchResources();

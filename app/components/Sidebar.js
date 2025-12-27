@@ -387,7 +387,8 @@ export default function Sidebar({
                                     ))}
                                 </ul>
                                 <div className="sidebar-actions">
-                                    <button onClick={() => onDownload('md')} className="sidebar-btn">Export Chat (Markdown)</button>
+                                    <button onClick={() => onDownload('md')} className="sidebar-btn">Export Chat (MD)</button>
+                                    <button onClick={() => onDownload('pdf')} className="sidebar-btn">Export Chat (PDF)</button>
                                     <label htmlFor="upload-btn" className="sidebar-btn">
                                         Upload Chat
                                     </label>

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { convertMarkdownToPdf } from '../utils/markdownToPdf';
 import './resources.css';
 
 
@@ -16,7 +17,7 @@ export default function ResourcesPage() {
     const [downloadingPdf, setDownloadingPdf] = useState(false);
     const contentRef = useRef(null);
     const [activeTab, setActiveTab] = useState('polished');
-    
+
 
     useEffect(() => {
         fetchResources();
@@ -70,34 +71,18 @@ export default function ResourcesPage() {
     };
 
     const downloadPdf = async () => {
-        if (!selectedResource || !contentRef.current) return;
+        if (!selectedResource || !resourceContent) return;
 
         setDownloadingPdf(true);
 
         try {
-            const html2pdf = (await import('html2pdf.js')).default;
-            const element = contentRef.current;
-            const opt = {
-                margin: [0.5, 0.5, 0.5, 0.5],
-                filename: `${selectedResource.slug}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { 
-                    scale: 2,
-                    useCORS: true,
-                    letterRendering: true
-                },
-                jsPDF: { 
-                    unit: 'in', 
-                    format: 'letter', 
-                    orientation: 'portrait' 
-                },
-                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-            };
-
-            await html2pdf().set(opt).from(element).save();
+            await convertMarkdownToPdf(
+                resourceContent,
+                `${selectedResource.slug}.pdf`
+            );
         } catch (error) {
             console.error('Failed to generate PDF:', error);
-            alert('Failed to generate PDF. Please try again.');
+            alert(`Failed to generate PDF: ${error.message}`);
         } finally {
             setDownloadingPdf(false);
         }
@@ -119,19 +104,19 @@ export default function ResourcesPage() {
                     <h1>Learning Resources</h1>
                     <p className="subtitle">I explore the human mind in collaboration with AI. Here you will find our creations. Some of these documents explore failure states of the human mind and edges of AI capability. They can be intense.  I started using AI in early 2025 after a breakup to make my internal experience legible. The Flavoured System—my current AI prompt—uses multiple 'personalities' that blend as needed. Documents are split: Raw (technical analysis, personal material) and Polished (designed for accessibility).</p>
                     <div className="tabs-container">
-                         <button 
-                             className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}
-                             onClick={() => setActiveTab('polished')}
-                         >
-                             📖 Somewhat Polished Documents
-                         </button>
-                         <button 
-                             className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
-                             onClick={() => setActiveTab('raw')}
-                         >
-                             🔧 Raw Documents
-                         </button>
-                     </div>
+                        <button
+                            className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('polished')}
+                        >
+                            📖 Somewhat Polished Documents
+                        </button>
+                        <button
+                            className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('raw')}
+                        >
+                            🔧 Raw Documents
+                        </button>
+                    </div>
                 </div>
 
             </header>
@@ -165,8 +150,8 @@ export default function ResourcesPage() {
                         <div className="modal-header">
                             <h2>{selectedResource.title}</h2>
                             <div className="modal-actions">
-                                <button 
-                                    className="download-btn" 
+                                <button
+                                    className="download-btn"
                                     onClick={downloadMarkdown}
                                     title="Download as Markdown"
                                     disabled={loadingContent}
@@ -174,8 +159,8 @@ export default function ResourcesPage() {
                                     <span className="btn-icon">📄</span>
                                     <span className="btn-text">MD</span>
                                 </button>
-                                <button 
-                                    className="download-btn" 
+                                <button
+                                    className="download-btn"
                                     onClick={downloadPdf}
                                     title="Download as PDF"
                                     disabled={loadingContent || downloadingPdf}

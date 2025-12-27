@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar';
 import chatDB from '../lib/database';
 import ChatLog from './components/ChatLog';
 import Link from 'next/link';
+import { convertMarkdownToPdf } from './utils/markdownToPdf';
 
 export default function Home() {
     const [messages, setMessages] = useState([]);
@@ -432,8 +433,8 @@ export default function Home() {
         });
     };
 
-    const handleDownload = (format = 'json') => {
-        if (format === 'md') {
+    const handleDownload = async (format = 'json') => {
+        if (format === 'md' || format === 'pdf') {
             if (!activeChatId) {
                 alert('No active chat to export.');
                 return;
@@ -453,15 +454,22 @@ export default function Home() {
                 lines.push('');
             }
             const md = lines.join('\n');
-            const blob = new Blob([md], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${activeChat.title}.md`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+
+            if (format === 'pdf') {
+                // Convert markdown to PDF
+                await convertMarkdownToPdf(md, `${activeChat.title}.pdf`);
+            } else {
+                // Download as markdown
+                const blob = new Blob([md], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${activeChat.title}.md`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
             return;
         }
     };

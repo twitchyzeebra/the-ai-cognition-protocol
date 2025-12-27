@@ -386,10 +386,7 @@ Moving from "I understand this" to "anyone can learn this" to "this exists indep
 
 The phases aren't strictly sequential. They form an iterative cycle:
 
-```
-Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5↑↑         ↑         ↑         ↑
-   └─────────┴─────────┴─────────┴─────────┘(Feedback loops at every stage)
-```
+![Phase Image](PDI.png)
 
 **Phase 4 often reveals:**
 - Need for more Phase 1 (gaps in exploration)

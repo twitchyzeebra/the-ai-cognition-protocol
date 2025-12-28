@@ -445,8 +445,11 @@ export default function Home() {
                 return;
             }
             const lines = [];
-            lines.push(`# ${activeChat.title}`);
-            lines.push('');
+            // Only include title for MD export, not PDF
+            if (format === 'md') {
+                lines.push(`# ${activeChat.title}`);
+                lines.push('');
+            }
             for (const m of messages) {
                 lines.push(`## ${m.role === 'assistant' ? 'Assistant' : 'User'}`);
                 lines.push('');

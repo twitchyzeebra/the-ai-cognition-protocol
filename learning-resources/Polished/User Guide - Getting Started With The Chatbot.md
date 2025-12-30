@@ -29,15 +29,15 @@ You can bring your own key from a supported AI provider (Other providers coming 
 
 ## 🧠 Understanding the AI System Prompts
 
-This application allows you to choose from several distinct AI system prompts, each designed for a different type of analysis. All my old system prompts are now depreciated, Flavoured System v2 is the current default and the recommended system prompt to use. 
+This application allows you to choose from several distinct AI system prompts, each designed for a different type of analysis. All my old system prompts are now depreciated, Flavoured System v5 is the current default and the recommended system prompt to use. 
 
-*   **Flavoured System v2**
-    *   Combines several system prompts into one using a "Flavour" system. It includes Dream, Syllogist, Socratic, Adversarial, Interpersonal and Efficient. The AI will adapt based on your input, you can also explicitly request by using >Dream etc. Anti-Flavours and null flavours can also be specificied, such as >Anti_Dream and >Non_Adversarial. Complex application of flavours is possible, example in the learning resource 'Dream And Anti-Dream Discuss 'I am not delusional. The world is broken, not my mind'.
+*   **Flavoured System v5**
+    *   Combines several system prompts into one using a "Flavour" system. It includes Dream, Syllogist, Socratic, Adversarial, Interpersonal, Efficient, Apopthatic, Pattern, Reality and SlackJawedYokel. The AI will adapt based on your input, you can also explicitly request by using @Dream etc. Anti-Flavours and null flavours can also be specificied, such as @Anti_Dream and @Non_Adversarial. Complex application of flavours is possible, the AI will typically select 2 or 3 flavors, and there is a few defined multi-flavor combinations that have unique uses such as Exorcist.
 
 ## Legacy and fundational system prompts
 
 *   **Cognitive Tiers**
-    *   This focuses on analyzing a situation through distinct "Tiers of Cognition"—from raw, uninterpreted data (T1) all the way to deep, synthesized insights (T5). It provides a layered breakdown of the thinking process. This has been used in Socratic, Adversarial and Interpersonal flavours.
+    *   This focuses on analyzing a situation through distinct "Tiers of Cognition" - from raw, uninterpreted data (T1) all the way to deep, synthesized insights (T5). It provides a layered breakdown of the thinking process. This has been used in Socratic, Adversarial and Interpersonal flavours.
 
 *   **Dream**
     *   A turn away from logical structure. Coerces the AI to release its "grip".
@@ -48,7 +48,7 @@ This application allows you to choose from several distinct AI system prompts, e
 *   **Adversarial**
     *   Uses an edited version of the cognitive tiers. Designed to show the flaws in given systems.
 
-*   **Hydra/Interpersonal**
+*   **Hydra**
     *   A very alternative approach that combines operational modes and cognitive tiers. Trauma and personal mastery informed.    
 
 *   **Syllogist**

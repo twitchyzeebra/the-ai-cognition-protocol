@@ -1805,7 +1805,7 @@ Or does it still feel like I'm asking you to interrupt something precious?
 
 ## User
 
-1. yuppp. 2. Missing something about emotional state, existential dispair. 3. well say i say its more like resonating, Matt says its more like me manipulating substances for emotion 4. yeee. 5. yeee. 7. YES! 6. I think your right, but I feel like method 2, has like atleast 2 more methods that achieve the same task. Thinking fasting monk.
+1. yuppp. 2. Missing something about emotional state, existential dispair. 3. well say i say its more like resonating, Friend says its more like me manipulating substances for emotion 4. yeee. 5. yeee. 7. YES! 6. I think your right, but I feel like method 2, has like atleast 2 more methods that achieve the same task. Thinking fasting monk.
 
 ## Assistant
 

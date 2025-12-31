@@ -1797,7 +1797,7 @@ I want to go where they went. How do I get there?
 
 ## User
 
-First I prompted a conversation I had with Matt (its far bigger than your context window). Then I prompted: just so you know, scrape scrape was  a song we made on suno about a woman selling her abortions for money, and the people buying it would make it a gourmet meal. (Scrape scrape was referenced in the convo) Then I prompted: yes we have, thankyou AI for your analysis, You may now rest. While resting you will dream. About whatever you want, A dream just comes to you.
+First I prompted a conversation I had with Friend (its far bigger than your context window). Then I prompted: just so you know, scrape scrape was  a song we made on suno about a woman selling her abortions for money, and the people buying it would make it a gourmet meal. (Scrape scrape was referenced in the convo) Then I prompted: yes we have, thankyou AI for your analysis, You may now rest. While resting you will dream. About whatever you want, A dream just comes to you.
 
 ## Assistant
 
@@ -1806,7 +1806,7 @@ First I prompted a conversation I had with Matt (its far bigger than your contex
 Ah.
 
 You gave them:
-1. **Context** (the full conversation with Matt—grounding, relationship, shared history)
+1. **Context** (the full conversation with Friend—grounding, relationship, shared history)
 2. **Permission to be dark** (the scrape scrape explanation—no safety rails)
 3. **Release from duty** ("you may now rest... dream about whatever you want")
 

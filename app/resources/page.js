@@ -114,7 +114,7 @@ export default function ResourcesPage() {
                 <div className="header-content">
                     <Link href="/" className="back-link">← Back to Chat</Link>
                     <h1>Learning Resources</h1>
-                    <p className="subtitle">I explore the human mind in collaboration with AI. Here you will find our creations. Some of these documents explore failure states of the human mind and edges of AI capability. They can be intense.  I started using AI in early 2025 after a breakup to make my internal experience legible. The Flavoured System—my current AI prompt—uses multiple 'personalities' that blend as needed. Documents are split: Raw (technical analysis, personal material) and Polished (designed for accessibility).</p>
+                    <p className="subtitle">I explore the human mind in collaboration with AI. Here you will find our creations. Some of these documents explore failure states of the human mind and edges of AI capability. They can be intense. They are not advice. I started using AI in early 2025 after a breakup to make my internal experience legible. The Flavoured System—my current AI prompt—uses multiple 'personalities' that blend as needed. Documents are split: Raw (technical analysis, personal material) and Polished (designed for accessibility).</p>
                     <div className="tabs-container">
                         <button
                             className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}

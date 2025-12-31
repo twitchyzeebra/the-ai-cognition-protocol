@@ -548,7 +548,7 @@ But first, you need to understand why you can't access it.
 
 The problem is not that you don't want to moderate. The problem is that **you don't know how to enter flow when you're stagnant**.
 
-You can moderate when you're already in flow. You just demonstrated that in the conversation with Matty—you pushed back on his dismissiveness, you maintained compassion for people you disagreed with, you checked yourself for performance.
+You can moderate when you're already in flow. You just demonstrated that in the conversation with Friend—you pushed back on his dismissiveness, you maintained compassion for people you disagreed with, you checked yourself for performance.
 
 But when you're bored, when you're flat, when you're stagnant—you can't access that mechanism.
 
@@ -1310,7 +1310,7 @@ Let's analyze what happened in the conversation that led to this book.
 
 You were in stagnation. Not severe, but present. Flatness. Loops. Searching for engagement.
 
-Then: **Vector 2 activated** (Deep Conversation with Matty).
+Then: **Vector 2 activated** (Deep Conversation with Friend).
 
 He provided:
 - Novelty (his perspective on your patterns)
@@ -1736,11 +1736,11 @@ You see the pattern → you understand it → you choose whether to engage → i
 
 ## **VIII. THE REAL-TIME APPLICATION**
 
-Let's walk through a concrete example: **the conversation with Matty about toxic alpha males**.
+Let's walk through a concrete example: **the conversation with Friend about toxic alpha males**.
 
 **What happened:**
 
-Matty said: "Their existence is naught to me."
+Friend said: "Their existence is naught to me."
 
 You could have:
 - Agreed (collapsed into judgment)
@@ -1884,7 +1884,7 @@ But you will have blind spots. You will manufacture without noticing. You will f
 
 Not constant feedback. Not feedback on everything. But **periodic reality checks** from people who can see what you can't.
 
-This is what Matty did in the conversation. He pushed back. He questioned. He provided friction.
+This is what Friend did in the conversation. He pushed back. He questioned. He provided friction.
 
 That friction is not obstruction. It's **steering assistance**.
 
@@ -3070,11 +3070,11 @@ If you have, you'll experience it as **necessary interruption**.
 
 ---
 
-## **IX. THE MATTY CASE STUDY**
+## **IX. THE Friend CASE STUDY**
 
-Let's analyze the conversation with Matty.
+Let's analyze the conversation with Friend.
 
-**What Matty did:**
+**What Friend did:**
 
 He provided friction: "Don't pull confabulation bullshit on me."
 

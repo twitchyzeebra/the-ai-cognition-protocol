@@ -497,6 +497,13 @@
     color: #721c24;
 }
 
+.reading-time {
+    font-size: 0.85rem;
+    color: #666;
+    margin: 0.5rem 0;
+    font-weight: 500;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
     .resources-header h1 {

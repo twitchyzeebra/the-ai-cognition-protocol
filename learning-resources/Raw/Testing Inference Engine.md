@@ -1,4 +1,3 @@
-
 ---
 complexity: intermediate
 ---

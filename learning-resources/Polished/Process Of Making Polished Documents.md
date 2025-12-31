@@ -1,3 +1,7 @@
+---
+complexity: intermediate
+---
+
 # From Exploration to Knowledge: A Five-Phase Framework
 
 ## Overview

@@ -1,6 +1,5 @@
 ---
 complexity: intermediate
-chattable: true
 ---
 
 ## User

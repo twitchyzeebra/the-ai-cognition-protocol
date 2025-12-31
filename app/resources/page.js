@@ -148,6 +148,11 @@ export default function ResourcesPage() {
                                     {resource.complexity}
                                 </div>
                             )}
+                            {resource.readingTime && (
+                                <div className="reading-time">
+                                    {resource.readingTime} min read
+                                </div>
+                            )}
                             <div className="card-footer">
                                 <span className="click-hint">Click to read →</span>
                             </div>

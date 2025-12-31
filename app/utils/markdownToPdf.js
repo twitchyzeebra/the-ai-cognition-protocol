@@ -98,22 +98,22 @@ export async function convertMarkdownToPdf(markdown, filename) {
         content: tokensToContent(tokens, imageMap),
         styles: {
             h1: {
-                fontSize: 24,
+                fontSize: 22,
                 bold: true,
                 margin: [0, 20, 0, 10]
             },
             h2: {
-                fontSize: 20,
+                fontSize: 18,
                 bold: true,
                 margin: [0, 15, 0, 8]
             },
             h3: {
-                fontSize: 16,
+                fontSize: 14,
                 bold: true,
                 margin: [0, 12, 0, 6]
             },
             h4: {
-                fontSize: 14,
+                fontSize: 12,
                 bold: true,
                 margin: [0, 10, 0, 5]
             },
@@ -123,12 +123,12 @@ export async function convertMarkdownToPdf(markdown, filename) {
                 margin: [0, 8, 0, 4]
             },
             h6: {
-                fontSize: 11,
+                fontSize: 12,
                 bold: true,
                 margin: [0, 6, 0, 3]
             },
             paragraph: {
-                fontSize: 11,
+                fontSize: 12,
                 margin: [0, 5, 0, 5],
                 lineHeight: 1.4
             },
@@ -139,13 +139,13 @@ export async function convertMarkdownToPdf(markdown, filename) {
                 preserveLeadingSpaces: true
             },
             blockquote: {
-                fontSize: 11,
+                fontSize: 12,
                 italics: true,
                 margin: [20, 5, 0, 5],
                 color: '#555555'
             },
             listItem: {
-                fontSize: 11,
+                fontSize: 12,
                 margin: [0, 2, 0, 2]
             },
             link: {
@@ -154,16 +154,16 @@ export async function convertMarkdownToPdf(markdown, filename) {
             },
             tableHeader: {
                 bold: true,
-                fontSize: 11,
+                fontSize: 12,
                 fillColor: '#f0f0f0'
             },
             tableCell: {
-                fontSize: 10
+                fontSize: 12
             }
         },
         defaultStyle: {
             font: 'Roboto',
-            fontSize: 11
+            fontSize: 12
         }
     };
 
@@ -276,7 +276,7 @@ function tokenToElement(token, imageMap) {
             // Don't use 'paragraph' style to avoid unwanted margins/line breaks
             return {
                 text: parseInlineTokens(token.tokens, imageMap),
-                fontSize: 11,
+                fontSize: 12,
                 lineHeight: 1.4
             };
 
@@ -344,7 +344,7 @@ function inlineTokenToElement(token, imageMap) {
         case 'codespan':
             return {
                 text: token.text,
-                fontSize: 10,
+                fontSize: 12,
                 background: '#f5f5f5'
             };
 
@@ -402,11 +402,18 @@ function listToElement(token, imageMap) {
     });
 
     if (token.ordered) {
-        return {
+        const listConfig = {
             ol: items,
             margin: [0, 5, 0, 5],
             style: 'listItem'
         };
+
+        // Preserve original list start number if not starting at 1
+        if (token.start && token.start !== 1) {
+            listConfig.start = token.start;
+        }
+
+        return listConfig;
     } else {
         return {
             ul: items,

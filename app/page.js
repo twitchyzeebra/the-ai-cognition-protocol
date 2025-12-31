@@ -101,10 +101,24 @@ export default function Home() {
                 // Load chat history from IndexedDB
                 const chats = await chatDB.getAllChats();
                 setChatHistory(chats);
-                
+
+                // Check if continuing a chat from resources page
+                const continueSlug = sessionStorage.getItem('continueChat');
+                if (continueSlug) {
+                    sessionStorage.removeItem('continueChat');
+                    try {
+                        const response = await fetch(`/api/learning-resources/${encodeURIComponent(continueSlug)}`);
+                        const data = await response.json();
+                        await handleUpload(data.content);
+                    } catch (error) {
+                        console.error('Failed to load resource for chat:', error);
+                        alert('Failed to load resource for chat continuation.');
+                    }
+                }
+
                 // Note: Messages will be loaded automatically by the activeChatId useEffect
                 // when storedActiveChatId is set above
-                
+
                 console.log('Loaded app state from IndexedDB and localStorage');
             } catch (error) {
                 console.error('Failed to load app state:', error);
@@ -512,19 +526,34 @@ export default function Home() {
         return { title, messages };
     }
 
-    const handleUpload = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
+    const handleUpload = async (eventOrContent) => {
+        let text;
+        let fileName = 'Imported Chat';
+        let isFileEvent = false;
+
+        // Determine if this is a file event or direct content
+        if (typeof eventOrContent === 'string') {
+            // Direct markdown content string
+            text = eventOrContent;
+        } else if (eventOrContent?.target?.files) {
+            // Traditional file input event
+            const file = eventOrContent.target.files[0];
+            if (!file) return;
+            text = await file.text();
+            fileName = file.name.replace(/\.(md|markdown)$/i, '');
+            isFileEvent = true;
+        } else {
+            return; // Invalid input
+        }
 
         try {
-            const text = await file.text();
-            const isMd = /\.md|\.markdown$/i.test(file.name) || (file.type || '').includes('markdown') || text.trim().startsWith('#');
+            const isMd = text.trim().startsWith('#') || /^#\s+.+/m.test(text);
             if (isMd) {
                 const { title, messages: mdMessages } = parseMarkdownChat(text);
                 if (!mdMessages || mdMessages.length === 0) {
                     alert('No messages found in the Markdown file.');
                 } else {
-                    const newTitle = title || file.name.replace(/\.(md|markdown)$/i, '');
+                    const newTitle = title || fileName;
                     const newId = await chatDB.createChat(
                         newTitle,
                         selectedSystemPrompt,
@@ -556,8 +585,10 @@ export default function Home() {
             console.error('Error importing chat file:', error);
             alert('Failed to import chat file. The file might be corrupted or in the wrong format.');
         } finally {
-            // Reset file input so the same file can be uploaded again
-            event.target.value = null;
+            // Reset file input only if this was a file event
+            if (isFileEvent && eventOrContent?.target) {
+                eventOrContent.target.value = null;
+            }
         }
     };
 

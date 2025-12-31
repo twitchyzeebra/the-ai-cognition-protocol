@@ -59,11 +59,14 @@ export default function ResourcesPage() {
     const downloadMarkdown = () => {
         if (!selectedResource || !resourceContent) return;
 
+        // Remove "Polished/" or "Raw/" prefix from filename
+        const filename = selectedResource.slug.split('/').pop();
+
         const blob = new Blob([resourceContent], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${selectedResource.slug}.md`;
+        a.download = `${filename}.md`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -76,9 +79,12 @@ export default function ResourcesPage() {
         setDownloadingPdf(true);
 
         try {
+            // Remove "Polished/" or "Raw/" prefix from filename
+            const filename = selectedResource.slug.split('/').pop();
+
             await convertMarkdownToPdf(
                 resourceContent,
-                `${selectedResource.slug}.pdf`
+                `${filename}.pdf`
             );
         } catch (error) {
             console.error('Failed to generate PDF:', error);
@@ -86,6 +92,12 @@ export default function ResourcesPage() {
         } finally {
             setDownloadingPdf(false);
         }
+    };
+
+    const handleContinueChat = () => {
+        if (!selectedResource) return;
+        sessionStorage.setItem('continueChat', selectedResource.slug);
+        window.location.href = '/';
     };
 
     if (loading) {
@@ -170,6 +182,17 @@ export default function ResourcesPage() {
                                         {downloadingPdf ? 'Generating...' : 'PDF'}
                                     </span>
                                 </button>
+                                {selectedResource?.chattable && (
+                                    <button
+                                        className="download-btn chat-btn"
+                                        onClick={handleContinueChat}
+                                        title="Continue this conversation"
+                                        disabled={loadingContent}
+                                    >
+                                        <span className="btn-icon">💬</span>
+                                        <span className="btn-text">Continue Chat</span>
+                                    </button>
+                                )}
                                 <button className="close-button" onClick={closeModal}>×</button>
                             </div>
                         </div>

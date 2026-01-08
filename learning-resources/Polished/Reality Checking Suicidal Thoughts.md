@@ -1,3 +1,7 @@
+---
+complexity: intermediate
+---
+
 # WHEN YOUR BRAIN IS LYING TO YOU: A FIELD GUIDE TO SUICIDAL THINKING
 
 ## HOW TO USE THIS DOCUMENT

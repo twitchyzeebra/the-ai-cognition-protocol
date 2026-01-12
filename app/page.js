@@ -23,7 +23,7 @@ export default function Home() {
     const [systemPrompts, setSystemPrompts] = useState([]);
     const [customPrompt, setCustomPrompt] = useState('');
     const [customPromptModelCollapsed, setIsCustomPromptModelCollapsed] = useState(true);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Flavoured System v5'); // Default prompt
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Emergent Flavor System'); // Default prompt
     const [llmSettings, setLlmSettings] = useState({ 
         provider: 'google', 
         models: { google: '', openai: '', anthropic: '', mistral: '' },
@@ -610,7 +610,7 @@ export default function Home() {
         }
         if(!!llmSettings.useDeveloperKey){
             payload.provider = 'anthropic';
-            payload.model = 'claude-sonnet-4-5';
+            payload.model = 'claude-opus-4-5';
             payload.useDeveloperKey = true;
         }
         return payload; 

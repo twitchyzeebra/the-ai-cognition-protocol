@@ -120,7 +120,7 @@ export default function ResourcesPage() {
                             className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}
                             onClick={() => setActiveTab('polished')}
                         >
-                            📖 Somewhat Polished Documents
+                            📖 Polished Documents
                         </button>
                         <button
                             className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}

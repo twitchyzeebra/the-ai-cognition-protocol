@@ -9,6 +9,64 @@ import ChatLog from './components/ChatLog';
 import Link from 'next/link';
 import { convertMarkdownToPdf } from './utils/markdownToPdf';
 
+const DEFAULT_SYSTEM_PROMPT = 'Emergent Flavor System';
+const STORAGE_KEYS = {
+    pageState: 'pageState',
+    chatHistory: 'chatHistory',
+    selectedSystemPrompt: 'selectedSystemPrompt',
+    usageTotalsPrefix: 'usageTotals:'
+};
+const usageTotalsKey = (chatId) => `${STORAGE_KEYS.usageTotalsPrefix}${chatId}`;
+
+const createDefaultLlmSettings = () => ({
+    provider: 'google',
+    models: { google: '', openai: '', anthropic: '', mistral: '' },
+    temperature: 0.7,
+    useProviderDefaultTemperature: true,
+    useDeveloperKey: true,
+    apiKeys: {
+        google: '',
+        openai: '',
+        anthropic: '',
+        mistral: ''
+    }
+});
+
+const normalizeLlmSettings = (rawSettings) => {
+    const defaults = createDefaultLlmSettings();
+    const provider = rawSettings?.provider || defaults.provider;
+    const legacyModel = rawSettings?.model || '';
+    const models = rawSettings?.models || {
+        google: provider === 'google' ? legacyModel : '',
+        openai: provider === 'openai' ? legacyModel : '',
+        anthropic: provider === 'anthropic' ? legacyModel : '',
+        mistral: provider === 'mistral' ? legacyModel : ''
+    };
+    return {
+        ...defaults,
+        ...rawSettings,
+        provider,
+        models,
+        temperature: typeof rawSettings?.temperature === 'number' ? rawSettings.temperature : defaults.temperature,
+        useProviderDefaultTemperature: rawSettings?.useProviderDefaultTemperature ?? defaults.useProviderDefaultTemperature,
+        useDeveloperKey: rawSettings?.useDeveloperKey ?? defaults.useDeveloperKey,
+        apiKeys: rawSettings?.apiKeys || defaults.apiKeys
+    };
+};
+
+const formatExportContent = (content) => {
+    if (typeof content === 'string') return content;
+    if (content == null) return '';
+    if (typeof content === 'object') {
+        try {
+            return JSON.stringify(content, null, 2);
+        } catch {
+            return String(content);
+        }
+    }
+    return String(content);
+};
+
 export default function Home() {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
@@ -23,20 +81,8 @@ export default function Home() {
     const [systemPrompts, setSystemPrompts] = useState([]);
     const [customPrompt, setCustomPrompt] = useState('');
     const [customPromptModelCollapsed, setIsCustomPromptModelCollapsed] = useState(true);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Emergent Flavor System'); // Default prompt
-    const [llmSettings, setLlmSettings] = useState({ 
-        provider: 'google', 
-        models: { google: '', openai: '', anthropic: '', mistral: '' },
-        temperature: 0.0,
-        useProviderDefaultTemperature: true,
-        useDeveloperKey: true,
-        apiKeys: {
-            google: '',
-            openai: '',
-            anthropic: '',
-            mistral: ''
-        }
-    });
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT); // Default prompt
+    const [llmSettings, setLlmSettings] = useState(createDefaultLlmSettings());
     const chatLogRef = useRef(null);
     const inflightControllerRef = useRef(null);
     const retryStateRef = useRef(null);
@@ -47,6 +93,14 @@ export default function Home() {
     const receivedUsageRef = useRef(false);
     const lastUserPromptRef = useRef('');
     const lastTurnHistorySnapshotRef = useRef([]);
+    const isSendDisabled = isLoading || (activeChatId && !messagesLoaded) || !input.trim();
+
+    const handleInputKeyDown = (event) => {
+        if (event.key !== 'Enter' || event.shiftKey) return;
+        if (event.nativeEvent?.isComposing) return;
+        event.preventDefault();
+        handleSendMessage();
+    };
 
     // Load state on initial render
     useEffect(() => {
@@ -56,7 +110,7 @@ export default function Home() {
                 await chatDB.migrateFromLocalStorage();
                 
                 // Load UI state from localStorage (non-chat data)
-                const storedPageState = localStorage.getItem('pageState');
+                const storedPageState = localStorage.getItem(STORAGE_KEYS.pageState);
                 let storedActiveChatId = null;
                 
                 if (storedPageState) {
@@ -75,24 +129,7 @@ export default function Home() {
                         if (parsedState.selectedSystemPrompt) setSelectedSystemPrompt(parsedState.selectedSystemPrompt);
                         
                         // Always set llmSettings to ensure proper structure
-                        setLlmSettings({
-                            provider: parsedState.llmSettings?.provider || 'google',
-                            models: parsedState.llmSettings?.models || {
-                                google: parsedState.llmSettings?.provider === 'google' ? (parsedState.llmSettings?.model || '') : '',
-                                openai: parsedState.llmSettings?.provider === 'openai' ? (parsedState.llmSettings?.model || '') : '',
-                                anthropic: parsedState.llmSettings?.provider === 'anthropic' ? (parsedState.llmSettings?.model || '') : '',
-                                mistral: parsedState.llmSettings?.provider === 'mistral' ? (parsedState.llmSettings?.model || '') : ''
-                            },
-                            temperature: typeof parsedState.llmSettings?.temperature === 'number' ? parsedState.llmSettings.temperature : 0.7,
-                            useProviderDefaultTemperature: !!parsedState.llmSettings?.useProviderDefaultTemperature,
-                            useDeveloperKey: !!parsedState.llmSettings?.useDeveloperKey,
-                            apiKeys: parsedState.llmSettings?.apiKeys || {
-                                google: '',
-                                openai: '',
-                                anthropic: '',
-                                mistral: ''
-                            }
-                        });
+                        setLlmSettings(normalizeLlmSettings(parsedState.llmSettings));
                     } catch (error) {
                         console.error('Failed to parse stored UI state - using defaults');
                     }
@@ -103,27 +140,33 @@ export default function Home() {
                 setChatHistory(chats);
 
                 // Check if continuing a chat from resources page
-                const continueSlug = sessionStorage.getItem('continueChat');
-                if (continueSlug) {
-                    sessionStorage.removeItem('continueChat');
-                    try {
-                        const response = await fetch(`/api/learning-resources/${encodeURIComponent(continueSlug)}`);
-                        const data = await response.json();
-                        await handleUpload(data.content);
-                    } catch (error) {
-                        console.error('Failed to load resource for chat:', error);
-                        alert('Failed to load resource for chat continuation.');
+                try {
+                    const continueSlug = sessionStorage.getItem('continueChat');
+                    if (continueSlug) {
+                        sessionStorage.removeItem('continueChat');
+                        try {
+                            const response = await fetch(`/api/learning-resources/${encodeURIComponent(continueSlug)}`);
+                            if (!response.ok) {
+                                throw new Error(`Request failed (${response.status})`);
+                            }
+                            const data = await response.json();
+                            await handleUpload(data.content);
+                        } catch (error) {
+                            console.error('Failed to load resource for chat:', error);
+                            alert('Failed to load resource for chat continuation.');
+                        }
                     }
+                } catch (error) {
+                    console.warn('Failed to access sessionStorage for chat continuation:', error);
                 }
 
                 // Note: Messages will be loaded automatically by the activeChatId useEffect
                 // when storedActiveChatId is set above
 
-                console.log('Loaded app state from IndexedDB and localStorage');
             } catch (error) {
                 console.error('Failed to load app state:', error);
                 // Fallback to localStorage for backward compatibility
-                const storedHistory = localStorage.getItem('chatHistory');
+                const storedHistory = localStorage.getItem(STORAGE_KEYS.chatHistory);
                 if (storedHistory) {
                     try {
                         setChatHistory(JSON.parse(storedHistory));
@@ -149,19 +192,23 @@ export default function Home() {
         // Adaptive debounce: longer delay while streaming to avoid excessive writes
         const delay = isLoading ? 1000 : 500;
         const timeoutId = setTimeout(() => {
-            localStorage.setItem('pageState', JSON.stringify({
-                activeChatId,
-                selectedResource,
-                resourceContent,
-                isChatCollapsed,
-                isResourceCollapsed,
-                selectedSystemPrompt,
-                llmSettings
-            }));
-            if (chatHistory.length > 0) {
-                localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+            try {
+                localStorage.setItem(STORAGE_KEYS.pageState, JSON.stringify({
+                    activeChatId,
+                    selectedResource,
+                    resourceContent,
+                    isChatCollapsed,
+                    isResourceCollapsed,
+                    selectedSystemPrompt,
+                    llmSettings
+                }));
+                if (chatHistory.length > 0) {
+                    localStorage.setItem(STORAGE_KEYS.chatHistory, JSON.stringify(chatHistory));
+                }
+            } catch (error) {
+                console.warn('Failed to save page state:', error);
             }
-    }, delay);
+        }, delay);
         return () => clearTimeout(timeoutId);
     }, [isLoaded, chatHistory, activeChatId, selectedResource, resourceContent, isChatCollapsed, isResourceCollapsed, selectedSystemPrompt, llmSettings]);
 
@@ -190,12 +237,13 @@ export default function Home() {
 
     // Load per-chat usage totals from localStorage when active chat changes
     useEffect(() => {
+        setUsageLast(null);
         if (!activeChatId) {
             setUsageTotals({ input: 0, output: 0, total: 0 });
             return;
         }
         try {
-            const raw = localStorage.getItem(`usageTotals:${activeChatId}`);
+            const raw = localStorage.getItem(usageTotalsKey(activeChatId));
             if (raw) {
                 const parsed = JSON.parse(raw);
                 setUsageTotals({
@@ -208,6 +256,7 @@ export default function Home() {
             }
         } catch (error){
             console.warn('Failed to load usage totals:', error);
+            setUsageTotals({ input: 0, output: 0, total: 0 });
         }
     }, [activeChatId]);
 
@@ -215,7 +264,7 @@ export default function Home() {
     useEffect(() => {
         if (!activeChatId) return;
         try {
-            localStorage.setItem(`usageTotals:${activeChatId}`, JSON.stringify(usageTotals));
+            localStorage.setItem(usageTotalsKey(activeChatId), JSON.stringify(usageTotals));
         } catch (error){
             console.warn('Failed to save usage totals:', error);
         }
@@ -264,40 +313,60 @@ export default function Home() {
         return () => window.removeEventListener('unhandledrejection', handler);
     }, []);
     useEffect(() => {
-        if (customPrompt && customPrompt.length > 0) {
-            localStorage.setItem('customPrompt', customPrompt);
+        try {
+            if (customPrompt && customPrompt.length > 0) {
+                localStorage.setItem('customPrompt', customPrompt);
+            } else {
+                localStorage.removeItem('customPrompt');
+            }
+        } catch (error) {
+            console.warn('Failed to save custom prompt:', error);
         }
     }, [customPrompt]);
     const fetchLearningResources = async () => {
         try {
             const response = await fetch('/api/learning-resources');
+            if (!response.ok) {
+                throw new Error(`Request failed (${response.status})`);
+            }
             const data = await response.json();
-            setLearningResources(data);
+            setLearningResources(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('Failed to fetch learning resources:', error);
+            setLearningResources([]);
         }
     };
 
     const fetchSystemPrompts = async () => {
         try {
             const response = await fetch('/api/system-prompts');
+            if (!response.ok) {
+                throw new Error(`Request failed (${response.status})`);
+            }
             const data = await response.json();
-            setSystemPrompts(data);
-            const saveCustomPrompt = localStorage.getItem('customPrompt');
-            if (saveCustomPrompt){
-                setCustomPrompt(saveCustomPrompt);
-            }
-            // Load previously selected prompt from localStorage or use default
-            const savedPrompt = localStorage.getItem('selectedSystemPrompt');
-            if (savedPrompt && data.includes(savedPrompt)) {
-                setSelectedSystemPrompt(savedPrompt);
-            }
-            if (savedPrompt && !data.includes(savedPrompt)){
-                localStorage.removeItem('selectedSystemPrompt');
-                setSelectedSystemPrompt('Cognitive Tiers With Delivery');
+            const promptList = Array.isArray(data) ? data : [];
+            setSystemPrompts(promptList);
+            try {
+                const saveCustomPrompt = localStorage.getItem('customPrompt');
+                if (saveCustomPrompt){
+                    setCustomPrompt(saveCustomPrompt);
+                }
+                // Load previously selected prompt from localStorage or use default
+                const savedPrompt = localStorage.getItem('selectedSystemPrompt');
+                if (savedPrompt && promptList.includes(savedPrompt)) {
+                    setSelectedSystemPrompt(savedPrompt);
+                }
+                if (savedPrompt && !promptList.includes(savedPrompt)){
+                    localStorage.removeItem('selectedSystemPrompt');
+                    setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
+                }
+            } catch (error) {
+                console.warn('Failed to load prompt preferences:', error);
+                setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
             }
         } catch (error) {
             console.error('Failed to fetch system prompts:', error);
+            setSystemPrompts([]);
         }
     };
 
@@ -307,10 +376,13 @@ export default function Home() {
             setIsResourceCollapsed(prev => !prev);
         } else {
             try {
-                const response = await fetch(`/api/learning-resources/${slug}`);
+                const response = await fetch(`/api/learning-resources/${encodeURIComponent(slug)}`);
+                if (!response.ok) {
+                    throw new Error(`Request failed (${response.status})`);
+                }
                 const data = await response.json();
                 setSelectedResource(slug);
-                setResourceContent(data.content);
+                setResourceContent(data.content || '');
                 setIsResourceCollapsed(false); // Ensure resource is visible
             } catch (error) {
                 console.error(`Failed to fetch resource ${slug}:`, error);
@@ -358,6 +430,11 @@ export default function Home() {
         try {
             // Delete from IndexedDB
             await chatDB.deleteChat(id);
+            try {
+                localStorage.removeItem(usageTotalsKey(id));
+            } catch (error) {
+                console.warn('Failed to clear usage totals for deleted chat:', error);
+            }
             
             // Update React state
             setChatHistory(prev => prev.filter(chat => chat.id !== id));
@@ -365,6 +442,8 @@ export default function Home() {
             if (activeChatId === id) {
                 setActiveChatId(null);
                 setMessages([]);
+                setUsageLast(null);
+                setUsageTotals({ input: 0, output: 0, total: 0 });
             }
         } catch (error) {
             console.error('Failed to delete chat:', error);
@@ -387,7 +466,11 @@ export default function Home() {
     
     const handleSelectSystemPrompt = (promptName) => {
         setSelectedSystemPrompt(promptName);
-        localStorage.setItem('selectedSystemPrompt', promptName);
+        try {
+            localStorage.setItem(STORAGE_KEYS.selectedSystemPrompt, promptName);
+        } catch (error) {
+            console.warn('Failed to persist selected system prompt:', error);
+        }
     };
     
     const handleResetPageState = async () => {
@@ -406,22 +489,34 @@ export default function Home() {
                 setResourceContent('');
                 setIsChatCollapsed(true); // Chat panel minimized after reset
                 setIsResourceCollapsed(false);
-                setSelectedSystemPrompt('Cognitive Tiers With Delivery');
-                setLlmSettings({ 
-                    provider: 'google', 
-                    model: '', 
-                    apiKeys: {
-                        google: '',
-                        openai: '',
-                        anthropic: '',
-                        mistral: ''
-                    }
-                });
+                setIsCustomPromptModelCollapsed(true);
+                setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
+                setCustomPrompt('');
+                setLlmSettings(createDefaultLlmSettings());
+                setUsageLast(null);
+                setUsageTotals({ input: 0, output: 0, total: 0 });
                 
                 // Clear localStorage
-                localStorage.removeItem('pageState');
-                localStorage.removeItem('chatHistory');
-                localStorage.removeItem('selectedSystemPrompt');
+                try {
+                    localStorage.removeItem(STORAGE_KEYS.pageState);
+                    localStorage.removeItem(STORAGE_KEYS.chatHistory);
+                    localStorage.removeItem(STORAGE_KEYS.selectedSystemPrompt);
+                    localStorage.removeItem('customPrompt');
+                } catch (error) {
+                    console.warn('Failed to clear localStorage keys:', error);
+                }
+                try {
+                    const keysToRemove = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith(STORAGE_KEYS.usageTotalsPrefix)) {
+                            keysToRemove.push(key);
+                        }
+                    }
+                    keysToRemove.forEach(key => localStorage.removeItem(key));
+                } catch (error) {
+                    console.warn('Failed to clear usage totals from localStorage:', error);
+                }
             
             // Notify the user
             alert('Page state has been reset successfully.');
@@ -467,7 +562,7 @@ export default function Home() {
             for (const m of messages) {
                 lines.push(`## ${m.role === 'assistant' ? 'Assistant' : 'User'}`);
                 lines.push('');
-                lines.push(m.content || '');
+                lines.push(formatExportContent(m.content));
                 lines.push('');
             }
             const md = lines.join('\n');
@@ -592,7 +687,7 @@ export default function Home() {
         }
     };
 
-// Build request payload consistently
+    // Build request payload consistently
     const buildPayload = (promptText, priorMessages) => {
         const payload = {
             prompt: promptText,
@@ -618,7 +713,7 @@ export default function Home() {
 
     const resend = () =>  {
         setInput(lastUserPromptRef.current || '');
-    }
+    };
 
     const handleSendMessage = async () => {
         if (!input.trim()) return;
@@ -810,7 +905,7 @@ export default function Home() {
 
             // Check if we got any response content
             if (!aiResponseText.trim()) {
-                console.log("No response received from the API. This might be due to an invalid API key, model, or service issue.");
+                console.warn("No response received from the API. This might be due to an invalid API key, model, or service issue.");
             }
             
             // Save the complete AI response to IndexedDB
@@ -987,25 +1082,24 @@ export default function Home() {
                                     <textarea
                                         value={input}
                                         onChange={(e) => setInput(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                handleSendMessage();
-                                            }
-                                        }}
+                                        onKeyDown={handleInputKeyDown}
                                         placeholder="Type your message..."
                                         disabled={isLoading}
+                                        aria-label="Chat message"
                                     />
-                                    <button onClick={handleSendMessage} disabled={isLoading || (activeChatId && !messagesLoaded)}>
+                                    <button onClick={handleSendMessage} disabled={isSendDisabled}>
                                         {isLoading ? 'Thinking...' : 'Send'}
                                     </button>
                                     {isLoading && (
-                                        <button onClick={() => { try { inflightControllerRef.current?.abort(); } catch {} }}>
+                                        <button
+                                            onClick={() => { try { inflightControllerRef.current?.abort(); } catch {} }}
+                                            aria-label="Stop generating response"
+                                        >
                                             Stop
                                         </button>
                                     )}
                                     {!isLoading && retryStateRef.current !== null && input === '' &&(
-                                        <button onClick={resend}> 
+                                        <button onClick={resend} aria-label="Copy last prompt">
                                             Copy Last
                                         </button>
                         )}

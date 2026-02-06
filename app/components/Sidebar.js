@@ -1,7 +1,52 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+const PROMPT_DESCRIPTIONS = {
+    Cognitive_Tiers_With_Delivery: 'A comprehensive prompt that implements cognitive tiers with structured delivery.',
+    Cognitive_Tiers: 'The core cognitive tiers framework without delivery structure, focusing on pure cognitive processing.',
+    Cognitive_Tiers_Technical: 'A more technical implementation of cognitive tiers.',
+    Modes_Technical_v2: 'Previously designed framework (deprecated), detailed analysis with heavy token use.',
+    Modes_v2: 'Previously designed framework (deprecated), analysis with moderate token use.',
+    Modes: 'Previously designed framework (deprecated), analysis with moderate-high token use.',
+    Response_Generator: "Specialized prompt for generating responses to reddit posts. Designed to be used as follows: Socratic Lens analysis of original reddit post, then run 'Expository Trace' using Cognitive Tiers, then use this system prompt with 'Generate Responses'",
+    Classic_AI: "Traditional AI 'You are a friendly helpful assistant'.",
+    Socratic_Lens: 'A short list of rules for the AI to follow. Includes a creative mode (initiated by prefixing your message with *, ask the AI for more details).',
+    Socratic_Lens_v2: 'A short list of rules for the AI to follow (v2 adds epistemic state and black swan analysis). Includes a creative mode (initiated by prefixing your message with *, ask the AI for more details).',
+    Interactive_Story_Detective: "Interactive storytelling prompt. Initiate with 'Start'."
+};
+
+const normalizePromptKey = (prompt) => prompt.replace(/_/g, '').replace(/-/g, '').replace(/\s+/g, '_');
+
+const PROVIDER_MODEL_PRESETS = {
+    google: [
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+    ],
+    openai: [
+        'gpt-4o',
+        'gpt-4o-mini',
+        'o4-mini'
+    ],
+    anthropic: [
+        'claude-sonnet-4-5',
+        'claude-sonnet-4-0',
+        'claude-opus-4-0', 
+        'claude-3-7-sonnet-latest',
+        'claude-3-5-haiku-latest'
+    ],
+    mistral: [
+        'mistral-large-latest',
+        'mistral-medium-latest',
+        'mistral-small-latest',
+        'magistral-medium-latest',
+        'magistral-small-latest',
+        'codestral-latest'
+    ],
+};
 
 export default function Sidebar({ 
     history, 
@@ -9,7 +54,6 @@ export default function Sidebar({
     onSelectChat, 
     activeChatId,
     onDownload,
-    onExportMarkdown,
     onUpload,
     learningResources,
     onSelectResource,
@@ -38,36 +82,8 @@ export default function Sidebar({
     const [renameValue, setRenameValue] = useState('');
     const [settingsMenuOpen, setSettingsMenuOpen] = useState(null);
     const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
 
-    const providerModelPresets = {
-        google: [
-            'gemini-2.5-pro',
-            'gemini-2.5-flash',
-            'gemini-2.5-flash-lite',
-            'gemini-2.0-flash',
-            'gemini-2.0-flash-lite',
-        ],
-        openai: [
-            'gpt-4o',
-            'gpt-4o-mini',
-            'o4-mini'
-        ],
-        anthropic: [
-            'claude-sonnet-4-5',
-            'claude-sonnet-4-0',
-            'claude-opus-4-0', 
-            'claude-3-7-sonnet-latest',
-            'claude-3-5-haiku-latest'
-        ],
-        mistral: [
-            'mistral-large-latest',
-            'mistral-medium-latest',
-            'mistral-small-latest',
-            'magistral-medium-latest',
-            'magistral-small-latest',
-            'codestral-latest'
-        ],
-    };
 
     // Load persisted UI state on mount
     useEffect(() => {
@@ -143,17 +159,7 @@ export default function Sidebar({
     }, [isCollapsed]);
 
     const handleToggleSidebar = () => {
-        setIsCollapsed(!isCollapsed);
-    };
-
-    const handleDeleteClick = (e, chatId) => {
-        e.stopPropagation(); // Prevent chat selection
-        if (confirmingDelete === chatId) {
-            onDeleteChat(chatId);
-            setConfirmingDelete(null);
-        } else {
-            setConfirmingDelete(chatId);
-        }
+        setIsCollapsed(prev => !prev);
     };
 
     const handleMouseLeave = (chatId) => {
@@ -234,7 +240,7 @@ export default function Sidebar({
     useEffect(() => {
         const handleClickOutside = (event) => {
             // Check if the click is outside the dropdown
-            const dropdown = document.querySelector('.custom-dropdown');
+            const dropdown = dropdownRef.current;
             if (dropdown && dropdownOpen && !dropdown.contains(event.target)) {
                 setDropdownOpen(false);
             }
@@ -246,9 +252,11 @@ export default function Sidebar({
         }
     }, [dropdownOpen]);
 
-    const filteredHistory = historyQuery
-        ? history.filter((chat) => (chat.title || '').toLowerCase().includes(historyQuery.toLowerCase()))
-        : history;
+    const filteredHistory = useMemo(() => {
+        const query = historyQuery.trim().toLowerCase();
+        if (!query) return history;
+        return history.filter((chat) => (chat.title || '').toLowerCase().includes(query));
+    }, [history, historyQuery]);
 
     const promptLabel = (p) => p.replace(/_/g, ' ').replace(/-/g, ' ');
 
@@ -331,9 +339,20 @@ export default function Sidebar({
                                         <li 
                                             key={chat.id} 
                                             className={`history-item ${chat.id === activeChatId ? 'active' : ''} ${renamingChat === chat.id ? 'renaming' : ''}`}
+                                            role="button"
+                                            tabIndex={renamingChat === chat.id ? -1 : 0}
+                                            aria-current={chat.id === activeChatId ? 'true' : undefined}
                                             onClick={renamingChat === chat.id ? undefined : () => { 
                                                 onSelectChat(chat.id); 
                                                 try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                                            }}
+                                            onKeyDown={(event) => {
+                                                if (renamingChat === chat.id) return;
+                                                if (event.key === 'Enter' || event.key === ' ') {
+                                                    event.preventDefault();
+                                                    onSelectChat(chat.id);
+                                                    try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                                                }
                                             }}
                                             onMouseLeave={() => handleMouseLeave(chat.id)}
                                         >
@@ -411,9 +430,18 @@ export default function Sidebar({
                                     <li 
                                         key={resource.slug} 
                                         className="history-item"
+                                        role="button"
+                                        tabIndex={0}
                                         onClick={() => { 
                                             onSelectResource(resource.slug); 
                                             try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                                        }}
+                                        onKeyDown={(event) => {
+                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                event.preventDefault();
+                                                onSelectResource(resource.slug);
+                                                try { if (typeof window !== 'undefined' && window.innerWidth < 900) setIsCollapsed(true); } catch {}
+                                            }
                                         }}
                                     >
                                         {resource.title}
@@ -434,35 +462,20 @@ export default function Sidebar({
                         {isPromptsVisible && (
                             <div className="system-prompt-dropdown-container">
                                 {/* Custom dropdown with tooltip support */}
-                                <div className="custom-dropdown">
+                                <div className="custom-dropdown" ref={dropdownRef}>
                                     <button
                                         className="dropdown-toggle"
                                         onClick={() => setDropdownOpen(!dropdownOpen)}
                                     >
-                                        {promptLabel(selectedSystemPrompt || "Cognitive Tiers With Delivery")}
+                                        {promptLabel(selectedSystemPrompt || "Emergent Flavor System")}
                                         <span className="dropdown-arrow">{dropdownOpen ? '▲' : '▼'}</span>
                                     </button>
                                     {dropdownOpen && (
                                         <ul className="dropdown-menu">
                                             {systemPrompts.map(prompt => {
                                                 // Generate descriptions for each prompt
-                                                const promptDescriptions = {
-                                                    "Cognitive_Tiers_With_Delivery": "A comprehensive prompt that implements cognitive tiers with structured delivery.",
-                                                    "Cognitive_Tiers": "The core cognitive tiers framework without delivery structure, focusing on pure cognitive processing.",
-                                                    "Cognitive_Tiers_Technical": "A more technical implementation of cognitive tiers.",
-                                                    "Modes_Technical_v2": "Previously designed framework (depreciated), detailed analysis with heavy token use.",
-                                                    "Modes_v2": "Previously designed framework (depreciated), analysis with moderate token use.",
-                                                    "Modes": "Previously designed framework (depreciated), analysis with moderate-high token use.",
-                                                    "Response_Generator": "Specialized prompt for generating responses to reddit posts. Designed to be used as follows: Socratic Lens analysis of original reddit post, then run 'Expository Trace' using Cognitive Tiers, then use this system prompt with 'Generate Responses'",
-                                                    "Classic_AI": "Traditional AI 'You are a friendly helpful assistant'.",
-                                                    "Socratic_Lens": "A short list of rules for the AI to follow. Includes a creative mode (initiated by prefixing your message with *, ask the AI for more details).",
-                                                    "Socratic_Lens_v2": "A short list of rules for the AI to follow (v2 adds epistemic state and black swan analysis). Includes a creative mode (initiated by prefixing your message with *, ask the AI for more details).",
-                                                    "Interactive_Story_Detective": "Interactive storytelling prompt. Initiate with 'Start'."
-                                                };
-
-                                                // Clean the prompt name for matching
-                                                const cleanPromptName = prompt.replace(/_/g, '').replace(/-/g, '').replace(/\s+/g, '_');
-                                                const description = promptDescriptions[cleanPromptName] ||
+                                                const cleanPromptName = normalizePromptKey(prompt);
+                                                const description = PROMPT_DESCRIPTIONS[cleanPromptName] ||
                                                                     "A system prompt designed for specialized interaction patterns.";
 
                                                 // Handle tooltip positioning
@@ -489,9 +502,19 @@ export default function Sidebar({
                                                     <li
                                                         key={prompt}
                                                         className={`dropdown-item ${prompt === selectedSystemPrompt ? 'active' : ''}`}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        aria-selected={prompt === selectedSystemPrompt}
                                                         onClick={() => {
                                                             onSelectSystemPrompt(prompt);
                                                             setDropdownOpen(false);
+                                                        }}
+                                                        onKeyDown={(event) => {
+                                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                                event.preventDefault();
+                                                                onSelectSystemPrompt(prompt);
+                                                                setDropdownOpen(false);
+                                                            }
                                                         }}
                                                         onMouseEnter={handleMouseEnter}
                                                         onMouseLeave={handleMouseLeave}
@@ -553,12 +576,12 @@ export default function Sidebar({
                                 <label style={{ display: 'block', marginBottom: 6 }}>
                                     Preset model
                                     <select
-                                        value={providerModelPresets[llmSettings?.provider || 'google']?.includes(llmSettings?.models?.[llmSettings?.provider]) ? llmSettings?.models[llmSettings?.provider] : ''}
+                                        value={PROVIDER_MODEL_PRESETS[llmSettings?.provider || 'google']?.includes(llmSettings?.models?.[llmSettings?.provider]) ? llmSettings?.models[llmSettings?.provider] : ''}
                                         onChange={(e) => onUpdateLlmSettings({ models: { ...(llmSettings?.models||{}), [llmSettings?.provider]: e.target.value } })}
                                         style={{ width: '100%', marginTop: 4 }}
                                     >
                                         <option value="">— Select a preset —</option>
-                                        {providerModelPresets[llmSettings?.provider || 'google']?.map((m) => (
+                                        {PROVIDER_MODEL_PRESETS[llmSettings?.provider || 'google']?.map((m) => (
                                             <option key={m} value={m}>{m}</option>
                                         ))}
                                     </select>

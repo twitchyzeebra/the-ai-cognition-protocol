@@ -6,16 +6,22 @@ import matter from 'gray-matter';
 export async function GET(request, { params }) {
     try {
         // Join the slug array back into a path
-        const resolvedParams = await params;
-        const slug = resolvedParams.slug.join('/');
+        const slugParts = Array.isArray(params?.slug) ? params.slug : [];
+        const slug = slugParts.join('/');
         const postsDirectory = path.join(process.cwd(), 'learning-resources');
         const filePath = path.join(postsDirectory, `${slug}.md`);
+        const normalizedPath = path.normalize(filePath);
 
-        if (!fs.existsSync(filePath)) {
+        const relativePath = path.relative(postsDirectory, normalizedPath);
+        if (!slug || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
             return NextResponse.json({ message: 'Resource not found' }, { status: 404 });
         }
 
-        const fileContent = fs.readFileSync(filePath, 'utf-8');
+        if (!fs.existsSync(normalizedPath)) {
+            return NextResponse.json({ message: 'Resource not found' }, { status: 404 });
+        }
+
+        const fileContent = fs.readFileSync(normalizedPath, 'utf-8');
         const { content } = matter(fileContent); 
 
         return NextResponse.json({ content });

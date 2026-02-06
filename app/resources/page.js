@@ -1,13 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { convertMarkdownToPdf } from '../utils/markdownToPdf';
 import './resources.css';
-
-
 export default function ResourcesPage() {
     const [resources, setResources] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -15,7 +13,6 @@ export default function ResourcesPage() {
     const [resourceContent, setResourceContent] = useState('');
     const [loadingContent, setLoadingContent] = useState(false);
     const [downloadingPdf, setDownloadingPdf] = useState(false);
-    const contentRef = useRef(null);
     const [activeTab, setActiveTab] = useState('polished');
 
 
@@ -23,13 +20,33 @@ export default function ResourcesPage() {
         fetchResources();
     }, []);
 
+    useEffect(() => {
+        if (!selectedResource) return;
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                closeModal();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedResource]);
+
+    const filteredResources = useMemo(
+        () => resources.filter(resource => resource.category === activeTab),
+        [resources, activeTab]
+    );
+
     const fetchResources = async () => {
         try {
             const response = await fetch('/api/learning-resources');
+            if (!response.ok) {
+                throw new Error(`Request failed (${response.status})`);
+            }
             const data = await response.json();
-            setResources(data);
+            setResources(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('Failed to fetch resources:', error);
+            setResources([]);
         } finally {
             setLoading(false);
         }
@@ -40,8 +57,11 @@ export default function ResourcesPage() {
         setLoadingContent(true);
         try {
             const response = await fetch(`/api/learning-resources/${encodeURIComponent(resource.slug)}`);
+            if (!response.ok) {
+                throw new Error(`Request failed (${response.status})`);
+            }
             const data = await response.json();
-            setResourceContent(data.content);
+            setResourceContent(data.content || '');
         } catch (error) {
             console.error('Failed to fetch resource content:', error);
             setResourceContent('Failed to load resource content.');
@@ -54,6 +74,7 @@ export default function ResourcesPage() {
         setSelectedResource(null);
         setResourceContent('');
         setLoadingContent(false);
+        setDownloadingPdf(false);
     };
 
     const downloadMarkdown = () => {
@@ -96,14 +117,18 @@ export default function ResourcesPage() {
 
     const handleContinueChat = () => {
         if (!selectedResource) return;
-        sessionStorage.setItem('continueChat', selectedResource.slug);
+        try {
+            sessionStorage.setItem('continueChat', selectedResource.slug);
+        } catch (error) {
+            console.warn('Failed to store continueChat flag:', error);
+        }
         window.location.href = '/';
     };
 
     if (loading) {
         return (
             <div className="resources-page">
-                <div className="loading">Loading resources...</div>
+                <div className="loading" role="status" aria-live="polite">Loading resources...</div>
             </div>
         );
     }
@@ -119,12 +144,14 @@ export default function ResourcesPage() {
                         <button
                             className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}
                             onClick={() => setActiveTab('polished')}
+                            aria-pressed={activeTab === 'polished'}
                         >
                             📖 Polished Documents
                         </button>
                         <button
                             className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
                             onClick={() => setActiveTab('raw')}
+                            aria-pressed={activeTab === 'raw'}
                         >
                             🔧 Raw Documents
                         </button>
@@ -135,37 +162,56 @@ export default function ResourcesPage() {
 
             <main className="resources-main">
                 <div className="cards-grid">
-                    {resources.filter(resource => resource.category === activeTab).map((resource) => (
-                        <div
-                            key={resource.slug}
-                            className="resource-card"
-                            onClick={() => handleCardClick(resource)}
-                        >
-                            <div className="card-icon">📚</div>
-                            <h3 className="card-title">{resource.title}</h3>
-                            {resource.complexity && (
-                                <div className={`complexity-badge ${resource.complexity}`}>
-                                    {resource.complexity}
+                    {filteredResources.length === 0 ? (
+                        <div className="empty-state">No resources available yet.</div>
+                    ) : (
+                        filteredResources.map((resource) => (
+                            <div
+                                key={resource.slug}
+                                className="resource-card"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => handleCardClick(resource)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault();
+                                        handleCardClick(resource);
+                                    }
+                                }}
+                                aria-label={`Open ${resource.title}`}
+                            >
+                                <div className="card-icon">📚</div>
+                                <h3 className="card-title">{resource.title}</h3>
+                                {resource.complexity && (
+                                    <div className={`complexity-badge ${resource.complexity}`}>
+                                        {resource.complexity}
+                                    </div>
+                                )}
+                                {resource.readingTime && (
+                                    <div className="reading-time">
+                                        {resource.readingTime} min read
+                                    </div>
+                                )}
+                                <div className="card-footer">
+                                    <span className="click-hint">Click to read →</span>
                                 </div>
-                            )}
-                            {resource.readingTime && (
-                                <div className="reading-time">
-                                    {resource.readingTime} min read
-                                </div>
-                            )}
-                            <div className="card-footer">
-                                <span className="click-hint">Click to read →</span>
                             </div>
-                        </div>
-                    ))}
+                        ))
+                    )}
                 </div>
             </main>
 
             {selectedResource && (
                 <div className="modal-overlay" onClick={closeModal}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                    <div
+                        className="modal-content"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="resource-modal-title"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <div className="modal-header">
-                            <h2>{selectedResource.title}</h2>
+                            <h2 id="resource-modal-title">{selectedResource.title}</h2>
                             <div className="modal-actions">
                                 <button
                                     className="download-btn"
@@ -198,17 +244,19 @@ export default function ResourcesPage() {
                                         <span className="btn-text">Continue Chat</span>
                                     </button>
                                 )}
-                                <button className="close-button" onClick={closeModal}>×</button>
+                                <button className="close-button" onClick={closeModal} aria-label="Close resource">
+                                    ×
+                                </button>
                             </div>
                         </div>
                         <div className="modal-body">
                             {loadingContent ? (
-                                <div className="content-loader">
+                                <div className="content-loader" role="status" aria-live="polite">
                                     <div className="loader"></div>
                                     <p>Loading content...</p>
                                 </div>
                             ) : (
-                                <div className="markdown-content" ref={contentRef}>
+                                <div className="markdown-content">
                                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                         {resourceContent}
                                     </ReactMarkdown>

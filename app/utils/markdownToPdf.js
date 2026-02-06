@@ -26,10 +26,16 @@ async function initializePdfMake() {
  */
 async function imageUrlToBase64(url) {
     try {
+        if (!url) {
+            return null;
+        }
         // Handle relative URLs
         const absoluteUrl = url.startsWith('http') ? url : window.location.origin + url;
 
         const response = await fetch(absoluteUrl);
+        if (!response.ok) {
+            throw new Error(`Image request failed (${response.status})`);
+        }
         const blob = await response.blob();
 
         return new Promise((resolve, reject) => {
@@ -78,7 +84,8 @@ export async function convertMarkdownToPdf(markdown, filename) {
     const pdfMake = await initializePdfMake();
 
     // Parse markdown to tokens
-    const tokens = marked.lexer(markdown);
+    const safeMarkdown = typeof markdown === 'string' ? markdown : String(markdown ?? '');
+    const tokens = marked.lexer(safeMarkdown);
 
     // Pre-fetch all images and convert to base64
     const imageUrls = collectImageUrls(tokens);

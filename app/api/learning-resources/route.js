@@ -4,13 +4,14 @@ import { NextResponse } from 'next/server';
 import matter from 'gray-matter';
 
 function calculateReadingTime(content) {
-    const plainText = content.replace(/```[\s\S]*?```|`[^`]+`|[#*_>\[\]()!-]/g, '');
-    const wordCount = plainText.trim().split(/\s+/).length;
+    const plainText = (content || '').replace(/```[\s\S]*?```|`[^`]+`|[#*_>\[\]()!-]/g, '');
+    const trimmed = plainText.trim();
+    const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
     return Math.max(1, Math.ceil(wordCount / 200));
 }
 
 function isChattable(content) {
-    return content.trim().startsWith('## User');
+    return (content || '').trim().startsWith('## User');
 }
 
 export async function GET() {
@@ -32,7 +33,7 @@ export async function GET() {
                 const { data, content } = matter(fileContent);
                 resources.push({
                     slug: `Polished/${slug}`,
-                    title: slug,
+                    title: data.title || slug,
                     category: 'polished',
                     complexity: data.complexity,
                     chattable: data.chattable !== undefined ? data.chattable : isChattable(content),
@@ -51,7 +52,7 @@ export async function GET() {
                 const { data, content } = matter(fileContent);
                 resources.push({
                     slug: `Raw/${slug}`,
-                    title: slug,
+                    title: data.title || slug,
                     category: 'raw',
                     complexity: data.complexity,
                     chattable: data.chattable !== undefined ? data.chattable : isChattable(content),
@@ -60,6 +61,7 @@ export async function GET() {
             });
         }
 
+        resources.sort((a, b) => a.title.localeCompare(b.title));
         return NextResponse.json(resources);
     } catch (error) {
         console.error('Failed to list learning resources:', error);

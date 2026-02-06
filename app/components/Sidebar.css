@@ -99,6 +99,10 @@
 }
 .history-item:hover { background-color: var(--input-bg); }
 .history-item.active { background-color: var(--assistant-message-bg); color: white; }
+.history-item:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+}
 
 .sidebar-actions { padding: 10px 20px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 10px; }
 .sidebar-btn { padding: 10px; border-radius: 5px; border: 1px solid var(--border-color); background-color: var(--input-bg); color: var(--text-color); cursor: pointer; text-align: center; transition: background-color 0.2s; font-size: 14px; }
@@ -423,18 +427,14 @@
     background-color: var(--input-bg);
 }
 
+.dropdown-item:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+}
+
 .dropdown-item.active {
     background-color: var(--assistant-message-bg);
     color: white;
-}
-
-/* Tooltip for prompt descriptions - using a separate tooltip element instead of pseudo-element */
-.tooltip-container {
-    position: relative;
-}
-
-.dropdown-item {
-    position: relative;
 }
 
 .dropdown-item:hover .prompt-tooltip {

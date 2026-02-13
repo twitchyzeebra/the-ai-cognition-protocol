@@ -610,7 +610,7 @@ export default function Home() {
         }
         if(!!llmSettings.useDeveloperKey){
             payload.provider = 'anthropic';
-            payload.model = 'claude-opus-4-5';
+            payload.model = 'claude-opus-4-6';
             payload.useDeveloperKey = true;
         }
         return payload; 

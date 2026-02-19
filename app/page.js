@@ -991,20 +991,54 @@ export default function Home() {
                 {/* Show landing page when both chat and resources are collapsed */}
                 {isChatCollapsed && (!selectedResource || isResourceCollapsed) && customPromptModelCollapsed ? (
                     <div className="landing-page-centered">
-                        <h1>Welcome to The AI Cognition Protocol</h1>
-                        <div className="landing-intro">
-                            <p><strong>A Framework for Your Mind. A Commitment to Your Safety.</strong></p>
-                            <p>This is a space for curiosity and growth. To ensure your journey is empowering, we operate on a few core beliefs.</p>
-                            <ul>
-                                <li><strong>Growth over Grades.</strong> This is a practice, not a performance.</li>
-                                <li><strong>You're in Control.</strong> Our tools are suggestions, not rules. You are the expert.</li>
-                                <li><strong>Clarity is Kindness.</strong> We're transparent about our methods and the fact that self-reflection can be challenging.</li>
-                            </ul>
-                            <p><em><strong>Please Note:</strong> These tools are for educational and self-development purposes. They are not a substitute for professional therapy or medical advice. Please seek help from a qualified professional if you are in distress.</em></p>
+                        <div className="landing-hero">
+                            <div className="landing-badge">The AI Cognition Protocol</div>
+                            <h1>Build clarity with structured, reflective dialogue.</h1>
+                            <p className="landing-subtitle">
+                                A guided workspace for self-inquiry, learning, and safe experimentation. You steer the session, we provide the structure.
+                            </p>
+                            <div className="landing-actions">
+                                <button
+                                    onClick={() => {
+                                        setInput("Tell me about yourself and how to use you.");
+                                        setIsChatCollapsed(false);
+                                    }}
+                                    className="landing-cta primary"
+                                >
+                                    Start a guided chat
+                                </button>
+                                <Link href="/resources" className="landing-cta secondary">
+                                    Explore resources
+                                </Link>
+                            </div>
+                            <div className="landing-meta">
+                                <span>Active system prompt:</span>
+                                <strong>{selectedSystemPrompt.replace(/-/g, ' ')}</strong>
+                            </div>
                         </div>
-                        <p>Currently using: <strong>{selectedSystemPrompt.replace(/-/g, ' ')}</strong></p>
-                        
-                        <div className="panel-controls">
+
+                        <div className="landing-grid">
+                            <div className="landing-card">
+                                <h3>Grounded, not graded</h3>
+                                <p>Progress over performance. The tools are suggestions, not rules.</p>
+                            </div>
+                            <div className="landing-card">
+                                <h3>Transparent approach</h3>
+                                <p>We explain the methodology so you can decide what fits your needs.</p>
+                            </div>
+                            <div className="landing-card">
+                                <h3>Your pace, your control</h3>
+                                <p>Pause, revisit, export, and continue when you’re ready.</p>
+                            </div>
+                        </div>
+
+                        <div className="landing-notice">
+                            <div>
+                                <h4>Safety note</h4>
+                                <p>
+                                    This space is for education and self-development. It is not a substitute for professional therapy or medical advice.
+                                </p>
+                            </div>
                             <button
                                 onClick={() => {
                                     const lower = (s) => (s || '').toLowerCase();
@@ -1015,34 +1049,18 @@ export default function Home() {
                                         handleSelectResource('Website Guide');
                                     }
                                 }}
-                                className="panel-toggle-btn"
+                                className="landing-cta tertiary"
                             >
-                                Show Website Guide
+                                Open website guide
                             </button>
-                            <button 
-                                onClick={() => {
-                                    setInput("Tell me about yourself and how to use you.");
-                                    setIsChatCollapsed(false); // Show the chat
-                                }}
-                                className="landing-option-btn"
-                            >
-                                Start talking with the AI
-                            </button>
-                            <Link href="/resources">
-                                <button className="landing-option-btn">
-                                    📚 View Learning Resources
-                                </button>
-                            </Link>
-                            
                         </div>
 
-                        <div className="landing-options">
-                            <a 
+                        <div className="landing-footer">
+                            <a
                                 href="https://ko-fi.com/cognitivearchitect"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="landing-option-btn"
-                                title="Support this project on Ko-fi"
+                                className="landing-support"
                             >
                                 ☕ Support this project on Ko-fi
                             </a>

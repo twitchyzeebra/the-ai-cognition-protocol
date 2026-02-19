@@ -11,9 +11,12 @@ export async function GET() {
         const prompts = files
             .filter(file => file.endsWith('.json'))
             .map(file => file.replace(/\.json$/, ''));
-        prompts.push('Custom Prompt');
-        return NextResponse.json(prompts);
+        const withCustom = [...new Set([...prompts, 'Custom Prompt'])].sort((a, b) => a.localeCompare(b));
+        return NextResponse.json(withCustom);
     } catch (error) {
+        if (error?.code === 'ENOENT') {
+            return NextResponse.json(['Custom Prompt']);
+        }
         console.error('Failed to get system prompts:', error);
         return NextResponse.json({ message: 'Failed to get system prompts' }, { status: 500 });
     }

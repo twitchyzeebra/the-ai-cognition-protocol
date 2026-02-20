@@ -10,13 +10,6 @@ import * as MistralAdapter from '../../../lib/llm-providers/mistral';
 
 const ALGORITHM = 'aes-256-gcm';
 
-function sanitizeStr(val) {
-    if (typeof val !== 'string') return val;
-    let t = val.trim();
-    //removal of ALL characters above 255
-    t = t.replace(/[\u0100-\uFFFF]/g, '');
-    return t;
-}
 
 // Helper for JSON error responses
 const jsonError = (error, status = 400) => new Response(JSON.stringify({ error }), {

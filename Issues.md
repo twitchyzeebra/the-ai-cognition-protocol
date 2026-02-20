@@ -1,7 +1,0 @@
-  - Issue 7: Race condition (if users report it)
-  - Issue 15: Unused function (keep for debugging)
-  - Issue 16: Inconsistent checks (style cleanup later)
-  - Issue 17: Magic numbers (refactor later)
-  - Issue 18: Commented code (your reference)
-  - Issue 21: Timeout cleanup (negligible impact)
-  - Issue 22: Window checks (cleanup later)

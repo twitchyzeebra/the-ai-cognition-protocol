@@ -943,7 +943,7 @@ export default function Home() {
 
                         <div className="landing-options">
                             <a 
-                                href="https://ko-fi.com/cognitivearchitect"
+                                href="https://ko-fi.com/thehumanpatch"
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="landing-option-btn"

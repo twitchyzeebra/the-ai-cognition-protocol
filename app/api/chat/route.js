@@ -5,6 +5,7 @@ import * as Googleadapter from '../../../lib/llm-providers/google';
 import * as OpenAIAdapter from '../../../lib/llm-providers/openai';
 import * as AnthropicAdapter from '../../../lib/llm-providers/anthropic';
 import * as MistralAdapter from '../../../lib/llm-providers/mistral';
+import * as GLMAdapter from '../../../lib/llm-providers/glm';
 
 // The 'edge' runtime has been removed to allow Node.js APIs like fs and crypto.
 
@@ -18,10 +19,11 @@ const jsonError = (error, status = 400) => new Response(JSON.stringify({ error }
 
 // Provider configuration (adapters + fallback models)
 const providers = {
-    google: { adapter: Googleadapter, defaultModel: 'gemini-2.5-pro' },
-    openai: { adapter: OpenAIAdapter, defaultModel: 'gpt-4o-mini' },
-    anthropic: { adapter: AnthropicAdapter, defaultModel: 'claude-3-5-haiku-latest' },
-    mistral: { adapter: MistralAdapter, defaultModel: 'mistral-medium-latest' }
+    google: { adapter: Googleadapter, defaultModel: 'gemini-3-flash-preview' },
+    openai: { adapter: OpenAIAdapter, defaultModel: 'gpt-5.2' },
+    anthropic: { adapter: AnthropicAdapter, defaultModel: 'claude-opus-4-6' },
+    mistral: { adapter: MistralAdapter, defaultModel: 'mistral-large-latest' },
+    glm: { adapter: GLMAdapter, defaultModel: 'glm-5' }
 };
 
 /**
@@ -128,7 +130,7 @@ export async function POST(req) {
         
         
         // Basic validation only for now
-        if (keySan && keySan.length > 150) {
+        if (keySan && keySan.length > 500) {
             return jsonError('API key too long', 413);
         }
         if (Array.isArray(history)) {

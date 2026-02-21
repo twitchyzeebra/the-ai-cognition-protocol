@@ -8,34 +8,40 @@ To communicate with the AI models, the application needs an API key. You have tw
 
 #### Using the Provided Key (For Testing Only)
 
-By default, a temporary testing key for the Antropic Models, currently set to sonnet 4.5. Please be aware that this key is for initial trials and is provided at my own cost. A subscription based model will be introduced when/if this gets popular, featuring a free tier. At this point, I highly recommend using your own key which will always be supported.
+By default, a temporary testing key for the Antropic Models, currently set to opus 4.6. Please be aware that this key is for initial trials and is provided at my own cost. A subscription based model will be introduced when/if this gets popular, featuring a free tier. At this point, I highly recommend using your own key which will always be supported.
 
 #### Using Your Own API Key (Recommended)
 
-You can bring your own key from a supported AI provider (Other providers coming soon™). This gives you direct control over your usage and access to different models.
+You can bring your own key from a supported AI provider. This gives you direct control over your usage and access to different models.
 
 1.  **Obtain a key from one of the following providers:**
-    *   **Google Gemini: NO WORK**
-        *   Get your key at: **[aistudio.google.com/apikey](https://aistudio.google.com/apikey)**
-        *   *(As of 11/DEC/25, There is no free tier for google keys. Also it currently DOES NOT WORK, I will fix it soon.)*
-    *   **Mistral AI: IDK IF IT WORKS ATM**
-        *   Get your key at: **[console.mistral.ai/api-keys](https://console.mistral.ai/api-keys)**
-        *   *(As of 19/08/25, Mistral offers a free key with a very generous usage allowance with an account. This is subject to model wide limits which seems to affect their medium model heavily.)*
-    *   **Anthropic/Claude AI: WORKS AND IS WHAT I USE**
-        *   Get your key at: **[console.anthropic.com/dashboard](https://console.anthropic.com/dashboard)**
-        *   *(Costs $5.5 US dollars to obtain a key. This gives you $5 US of credit to use. Currently this is the most recommended pathway, and works as intended as of 11/DEC/25)*
+    *   **Google Gemini:**
+        *   Get your key at: **[aistudio.google.com/api-keys](https://aistudio.google.com/api-keys)**
+        *   *(As of 21 Feb 26, gemini-3-flash-preview is free to use with 20 uses per day.)*
+    *   **Mistral AI:**
+        *   Get your key at: **[admin.mistral.ai/organization/api-keys](https://admin.mistral.ai/organization/api-keys)**
+        *   *(Mistral offers cheap and decently capable models. They used to have a free tier, I am unsure if that still exists)*
+    *   **Anthropic/Claude AI: What I Use**
+        *   Get your key at: **[platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)**
+        *   *(Costs $5.5 US dollars to obtain a key. This gives you $5 US of credit to use. Currently this is the most recommended pathway as it gives you access to opus 4.6, a very powerful model.)*
+    *   **Z.ai:**
+        *   Get your key at: **[z.ai/manage-apikey/apikey-list](https://z.ai/manage-apikey/apikey-list)**
+        *   *(As of 21 Feb 26, GLM-4.7-Flash is free to use, its typically slow to respond and has rate limits.)*
 
 2.  **Configure your key in the application's sidebar.** Once you have your key, open the settings panel in the sidebar to enter it and select your desired model.
 
 ## 🧠 Understanding the AI System Prompts
 
-This application allows you to choose from several distinct AI system prompts, each designed for a different type of analysis. All my old system prompts are now depreciated, Flavoured System v5 is the current default and the recommended system prompt to use. 
+This application allows you to choose from several distinct AI system prompts, each designed for a different type of analysis. Many of my old system prompts are listed which have not been updated in awhile. Emergent Flavor System is the current default and the recommended system prompt to use. 
 
-*   **Flavoured System v5**
-    *   Combines several system prompts into one using a "Flavour" system. It includes Dream, Syllogist, Socratic, Adversarial, Interpersonal, Efficient, Apopthatic, Pattern, Reality and SlackJawedYokel. The AI will adapt based on your input, you can also explicitly request by using @Dream etc. Anti-Flavours and null flavours can also be specificied, such as @Anti_Dream and @Non_Adversarial. Complex application of flavours is possible, the AI will typically select 2 or 3 flavors, and there is a few defined multi-flavor combinations that have unique uses such as Exorcist.
+*   **Emergent Flavor System**
+    *   Combines several system prompts into one using a "Flavor" system. It includes Dream, Syllogist, Socratic, Adversarial, Interpersonal, Efficient, Apopthatic, Pattern, Reality and Mirror. The AI will adapt based on your input, you can also explicitly request by using @Dream etc. Anti-Flavors and null flavors can also be specificied, such as @Anti_Dream and @Non_Adversarial. Complex application of flavours is possible, the AI will typically select 2 or 3 flavors, and there is a few defined multi-flavor combinations that have unique uses such as Exorcist.
 
 *   **Inference Engine**
-    *   Combines several system prompts into one using a "Flavour" system. It includes Dream, Syllogist, Socratic, Adversarial, Interpersonal, Efficient, Apopthatic, Pattern, Reality and SlackJawedYokel. The AI will adapt based on your input, you can also explicitly request by using @Dream etc. Anti-Flavours and null flavours can also be specificied, such as @Anti_Dream and @Non_Adversarial. Complex application of flavours is possible, the AI will typically select 2 or 3 flavors, and there is a few defined multi-flavor combinations that have unique uses such as Exorcist.
+    *   Is designed to minimize hallucinations. Very experiemental.
+
+*   **Generic System**
+    *   Specifically designed to remove my grievences with the default gemini 3.0 pro model. The bulk of it was written in 2 minutes off the top of my head.
 
 ## Legacy and fundational system prompts
 
@@ -72,4 +78,4 @@ Your privacy and data control are paramount.
     *   **[github.com/twitchyzeebra/the-ai-cognition-protocol](https://github.com/twitchyzeebra/the-ai-cognition-protocol/tree/master)**
 
 *   **Support the Project:** If you find this tool valuable, please consider supporting its ongoing development:
-    *   **[ko-fi.com/cognitivearchitect](https://ko-fi.com/cognitivearchitect)**
+    *   **[ko-fi.com/thehumanpatch](https://ko-fi.com/thehumanpatch)**

@@ -41,23 +41,15 @@ export default function Sidebar({
 
     const providerModelPresets = {
         google: [
-            'gemini-2.5-pro',
-            'gemini-2.5-flash',
-            'gemini-2.5-flash-lite',
-            'gemini-2.0-flash',
-            'gemini-2.0-flash-lite',
+            'gemini-3-flash-preview'
         ],
         openai: [
-            'gpt-4o',
-            'gpt-4o-mini',
-            'o4-mini'
+            'gpt-5.2'
         ],
         anthropic: [
-            'claude-sonnet-4-5',
-            'claude-sonnet-4-0',
-            'claude-opus-4-0', 
-            'claude-3-7-sonnet-latest',
-            'claude-3-5-haiku-latest'
+            'claude-sonnet-4-6',
+            'claude-opus-4-6',
+            'claude-haiku-4-5'
         ],
         mistral: [
             'mistral-large-latest',
@@ -66,6 +58,12 @@ export default function Sidebar({
             'magistral-medium-latest',
             'magistral-small-latest',
             'codestral-latest'
+        ],
+        glm: [
+            'GLM-5',
+            'GLM-4.7-Flash',
+            'GLM-4.7-FlashX',
+            'GLM-5-Code'
         ],
     };
 
@@ -538,6 +536,7 @@ export default function Sidebar({
                                         <option value="openai">OpenAI</option>
                                         <option value="anthropic">Anthropic</option>
                                         <option value="mistral">Mistral</option>
+                                        <option value="glm">Z.ai</option>
                                     </select>
                                 </label>
                                 <label style={{ display: 'block', marginBottom: 6 }}>

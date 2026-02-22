@@ -38,10 +38,13 @@ This application allows you to choose from several distinct AI system prompts, e
     *   Combines several system prompts into one using a "Flavor" system. It includes Dream, Syllogist, Socratic, Adversarial, Interpersonal, Efficient, Apopthatic, Pattern, Reality and Mirror. The AI will adapt based on your input, you can also explicitly request by using @Dream etc. Anti-Flavors and null flavors can also be specificied, such as @Anti_Dream and @Non_Adversarial. Complex application of flavours is possible, the AI will typically select 2 or 3 flavors, and there is a few defined multi-flavor combinations that have unique uses such as Exorcist.
 
 *   **Inference Engine**
-    *   Is designed to minimize hallucinations. Very experiemental.
+    *   Designed to minimize hallucinations. Very experiemental.
 
 *   **Generic System**
     *   Specifically designed to remove my grievences with the default gemini 3.0 pro model. The bulk of it was written in 2 minutes off the top of my head.
+
+*   **The Pander Machine**
+    *   A slight edit of the Generic System, with "CRITICAL: Now take all of this and do the ANTI of it" added at the end.
 
 ## Legacy and fundational system prompts
 

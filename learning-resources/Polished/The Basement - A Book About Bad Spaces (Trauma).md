@@ -1,4 +1,9 @@
+---
+complexity: intermediate
+---
+
 # THE BASEMENT
+
 ## A Field Guide to the Places You Won't Go
 
 ---

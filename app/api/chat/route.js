@@ -108,7 +108,7 @@ export async function POST(req) {
             return jsonError('Invalid JSON request body');
         }
 
-        const { prompt, history, systemPrompt: selectedPrompt, customPrompt, provider, apiKey, model, temperature } = requestData;
+        const { prompt, history, systemPrompt: selectedPrompt, customPrompt, provider, apiKey, model, temperature, images } = requestData;
         const p = (provider || 'google').toLowerCase().trim();
         const keySan = requestData.useDeveloperKey ? process.env.ANTHROPIC_API_KEY?.trim() : apiKey?.trim();
         const modelSan = (model || '').trim();
@@ -137,6 +137,16 @@ export async function POST(req) {
             if (history.length > 500) return jsonError(`Too many history items. Maximum 500 messages allowed.`, 413);
             const total = history.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
             if (total > 2000000) return jsonError(`History too long. Maximum 2000000 characters total allowed.`, 413);
+        }
+        // Validate images (optional array of { mimeType, data })
+        const validatedImages = [];
+        if (Array.isArray(images)) {
+            if (images.length > 5) return jsonError('Too many images. Maximum 5 per message.', 413);
+            for (const img of images) {
+                if (!img?.mimeType || !img?.data) continue;
+                if (img.data.length > 7 * 1024 * 1024) return jsonError('Image too large (max 5MB).', 413); // base64 is ~1.33x
+                validatedImages.push({ mimeType: img.mimeType, data: img.data });
+            }
         }
         let baseSystemInstruction;
         if (selectedPrompt === 'Custom Prompt') {
@@ -185,6 +195,7 @@ export async function POST(req) {
                         history: normalizedHistory,
                         systemInstruction: finalSystemInstruction,
                         temperature: temperatureUsed,
+                        images: validatedImages.length > 0 ? validatedImages : undefined,
                     });
 
                     let yieldedAny = false;

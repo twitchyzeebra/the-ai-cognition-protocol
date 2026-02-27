@@ -20,6 +20,7 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
     const [usageLast, setUsageLast] = useState(null);
     const [usageTotals, setUsageTotals] = useState({ input: 0, output: 0, total: 0 });
     const [hasRetry, setHasRetry] = useState(false);
+    const [attachedFiles, setAttachedFiles] = useState([]);
 
     // ── Refs ───────────────────────────────────────────────
     const chatLogRef = useRef(null);
@@ -164,6 +165,54 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
         return { title, messages: parsed };
     }
 
+    const TEXT_EXTENSIONS = ['.txt', '.md'];
+    const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const MAX_TEXT_SIZE = 2000 * 1024;       // 2MB for text files
+    const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB for images
+
+    const addFiles = useCallback((fileList) => {
+        const readPromises = [];
+        for (const file of fileList) {
+            const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+            if (TEXT_EXTENSIONS.includes(ext)) {
+                if (file.size > MAX_TEXT_SIZE) {
+                    alert(`File too large: ${file.name} (${(file.size / 1024).toFixed(1)}KB). Max text file size is 100KB.`);
+                    continue;
+                }
+                readPromises.push(file.text().then(content => ({ name: file.name, content, type: 'text' })));
+            } else if (IMAGE_EXTENSIONS.includes(ext)) {
+                if (file.size > MAX_IMAGE_SIZE) {
+                    alert(`Image too large: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)}MB). Max image size is 5MB.`);
+                    continue;
+                }
+                readPromises.push(new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve({ name: file.name, dataUrl: reader.result, mimeType: file.type || 'image/png', type: 'image' });
+                    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+                    reader.readAsDataURL(file);
+                }));
+            } else {
+                alert(`Unsupported file type: ${file.name}. Supported: .txt, .md, .png, .jpg, .jpeg, .gif, .webp`);
+            }
+        }
+        if (readPromises.length === 0) return;
+        Promise.all(readPromises).then(results => {
+            setAttachedFiles(prev => [...prev, ...results]);
+        });
+    }, []);
+
+    const removeFile = useCallback((index) => {
+        setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+    }, []);
+
+    function formatAttachedFiles(files) {
+        const textFiles = files.filter(f => f.type === 'text');
+        if (!textFiles.length) return '';
+        return textFiles.map(f =>
+            `<file name="${f.name}">\n${f.content}\n</file>`
+        ).join('\n\n');
+    }
+
     const estimateTokens = (s) => {
         const len = (s || '').length;
         return len ? Math.max(1, Math.ceil(len / 4)) : 0;
@@ -289,13 +338,32 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
         retryStateRef.current = null;
         setHasRetry(false);
 
-        const userMessage = { role: 'user', content: input };
+        // Separate text files from images
+        const textAttachments = attachedFiles.filter(f => f.type === 'text');
+        const imageAttachments = attachedFiles.filter(f => f.type === 'image');
+        const hasAttachments = attachedFiles.length > 0;
+
+        // Build text prompt: text file contents + user input
+        const filePrefix = textAttachments.length > 0 ? formatAttachedFiles(textAttachments) : '';
+        const fullPrompt = filePrefix ? filePrefix + '\n\n' + input : input;
+
+        // content = what the LLM sees (text files + typed message); images go separately on payload
+        // displayContent / files / images = what the UI renders
+        const userMessage = { role: 'user', content: fullPrompt };
+        if (hasAttachments) {
+            userMessage.displayContent = input;
+            userMessage.files = attachedFiles.map(f => ({ name: f.name, type: f.type }));
+        }
+        if (imageAttachments.length > 0) {
+            userMessage.images = imageAttachments.map(f => ({ name: f.name, dataUrl: f.dataUrl }));
+        }
         const newMessages = [...messages, userMessage];
         receivedUsageRef.current = false;
-        lastUserPromptRef.current = input;
+        lastUserPromptRef.current = fullPrompt;
         lastTurnHistorySnapshotRef.current = messages;
         setMessages(newMessages);
         setInput('');
+        setAttachedFiles([]);
         setIsLoading(true);
 
         let currentChatId = activeChatId;
@@ -314,17 +382,28 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
                     (llmSettings.models?.[llmSettings.provider] || '')
                 );
                 // Save user message BEFORE setting activeChatId to avoid race condition
-                await chatDB.addMessage(currentChatId, userMessage.role, userMessage.content);
+                const dbMeta = hasAttachments ? { displayContent: input, files: userMessage.files, ...(userMessage.images && { images: userMessage.images }) } : undefined;
+                await chatDB.addMessage(currentChatId, userMessage.role, userMessage.content, dbMeta);
                 setActiveChatId(currentChatId);
 
                 const now = new Date();
                 const newChat = { id: currentChatId, title: newTitle, created: now, updated: now, systemPrompt: selectedSystemPrompt, provider: llmSettings.provider, model: (llmSettings.models?.[llmSettings.provider] || '') };
                 setChatHistory(prev => [...prev, newChat]);
             } else {
-                await chatDB.addMessage(currentChatId, userMessage.role, userMessage.content);
+                const dbMeta = hasAttachments ? { displayContent: input, files: userMessage.files, ...(userMessage.images && { images: userMessage.images }) } : undefined;
+                await chatDB.addMessage(currentChatId, userMessage.role, userMessage.content, dbMeta);
             }
 
-            const payload = buildPayload(input, messages);
+            const payload = buildPayload(fullPrompt, messages);
+
+            // Attach images to payload for the current turn only (not re-sent in history)
+            if (imageAttachments.length > 0) {
+                payload.images = imageAttachments.map(f => {
+                    // Extract raw base64 from data URL: "data:image/png;base64,iVBOR..." → "iVBOR..."
+                    const base64 = f.dataUrl.split(',')[1];
+                    return { mimeType: f.mimeType, data: base64 };
+                });
+            }
 
             // Add assistant placeholder
             setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
@@ -424,13 +503,14 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
             setIsLoading(false);
             inflightControllerRef.current = null;
         }
-    }, [input, activeChatId, messagesLoaded, messages, selectedSystemPrompt, customPrompt, llmSettings, chatHistory]);
+    }, [input, activeChatId, messagesLoaded, messages, selectedSystemPrompt, customPrompt, llmSettings, chatHistory, attachedFiles]);
 
     // ── Return ─────────────────────────────────────────────
     return {
         // State
         messages, input, isLoading, chatHistory, activeChatId,
         messagesLoaded, usageLast, usageTotals, chatLogRef, hasRetry,
+        attachedFiles,
 
         // Setters for cross-cutting handlers in page.js
         setInput, setActiveChatId, setChatHistory,
@@ -446,5 +526,7 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
         stopGeneration,
         clearChat,
         loadChatHistory,
+        addFiles,
+        removeFile,
     };
 }

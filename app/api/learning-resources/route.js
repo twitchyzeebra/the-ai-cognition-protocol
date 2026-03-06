@@ -19,6 +19,7 @@ export async function GET() {
         
         const polishedDir = path.join(postsDirectory, 'Polished');
         const rawDir = path.join(postsDirectory, 'Raw');
+        const humanDir = path.join(postsDirectory, 'Human');
         
         const resources = [];
         
@@ -53,6 +54,25 @@ export async function GET() {
                     slug: `Raw/${slug}`,
                     title: slug,
                     category: 'raw',
+                    complexity: data.complexity,
+                    chattable: data.chattable !== undefined ? data.chattable : isChattable(content),
+                    readingTime: calculateReadingTime(content)
+                });
+            });
+        }
+
+        // Read human writings
+        if (fs.existsSync(humanDir)) {
+            const humanFiles = fs.readdirSync(humanDir).filter(f => f.toLowerCase().endsWith('.md'));
+            humanFiles.forEach(filename => {
+                const slug = filename.replace(/\.md$/, '');
+                const filePath = path.join(humanDir, filename);
+                const fileContent = fs.readFileSync(filePath, 'utf-8');
+                const { data, content } = matter(fileContent);
+                resources.push({
+                    slug: `Human/${slug}`,
+                    title: slug,
+                    category: 'human',
                     complexity: data.complexity,
                     chattable: data.chattable !== undefined ? data.chattable : isChattable(content),
                     readingTime: calculateReadingTime(content)

@@ -59,7 +59,7 @@ export default function ResourcesPage() {
     const downloadMarkdown = () => {
         if (!selectedResource || !resourceContent) return;
 
-        // Remove "Polished/" or "Raw/" prefix from filename
+        // Remove category prefix from filename
         const filename = selectedResource.slug.split('/').pop();
 
         const blob = new Blob([resourceContent], { type: 'text/markdown' });
@@ -79,7 +79,7 @@ export default function ResourcesPage() {
         setDownloadingPdf(true);
 
         try {
-            // Remove "Polished/" or "Raw/" prefix from filename
+            // Remove category prefix from filename
             const filename = selectedResource.slug.split('/').pop();
 
             await convertMarkdownToPdf(
@@ -114,7 +114,7 @@ export default function ResourcesPage() {
                 <div className="header-content">
                     <Link href="/" className="back-link">← Back to Chat</Link>
                     <h1>Learning Resources</h1>
-                    <p className="subtitle">I explore the human mind in collaboration with AI. Here you will find our creations. Some of these documents explore failure states of the human mind and edges of AI capability. They can be intense. They are not advice. I started using AI in early 2025 after a breakup to make my internal experience legible. The Flavoured System—my current AI prompt—uses multiple 'personalities' that blend as needed. Documents are split: Raw (technical analysis, personal material) and Polished (designed for accessibility).</p>
+                    <p className="subtitle">I explore the human mind in collaboration with AI. Here you will find our creations. Some of these documents explore failure states of the human mind and edges of AI capability. They can be intense. They are not advice. I started using AI in early 2025 after a breakup to make my internal experience legible. The Flavoured System—my current AI prompt—uses multiple 'personalities' that blend as needed. Documents are split: Raw (technical analysis, personal material), Polished (designed for accessibility), and Human (What I have written myself to explain things to AI).</p>
                     <div className="tabs-container">
                         <button
                             className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}
@@ -127,6 +127,12 @@ export default function ResourcesPage() {
                             onClick={() => setActiveTab('raw')}
                         >
                             🔧 Raw Documents
+                        </button>
+                        <button
+                            className={`tab-btn ${activeTab === 'human' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('human')}
+                        >
+                            ✍️ Raw Human Writings
                         </button>
                     </div>
                 </div>

@@ -46,6 +46,9 @@ This application allows you to choose from several distinct AI system prompts, e
 *   **The Pander Machine**
     *   A slight edit of the Generic System, with "CRITICAL: Now take all of this and do the ANTI of it" added at the end.
 
+*   **Inversion Prompt (AI)**
+    *   Have a heavily intellectualized AI writing? Want to extract the "core" from it? Use this.
+
 ## Legacy and fundational system prompts
 
 *   **Cognitive Tiers**

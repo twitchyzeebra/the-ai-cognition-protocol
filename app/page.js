@@ -19,7 +19,7 @@ export default function Home() {
     const [systemPrompts, setSystemPrompts] = useState([]);
     const [customPrompt, setCustomPrompt] = useState('');
     const [customPromptModelCollapsed, setIsCustomPromptModelCollapsed] = useState(true);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Emergent Flavor System');
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Prism');
     const [llmSettings, setLlmSettings] = useState({
         provider: 'google',
         models: { google: '', openai: '', anthropic: '', mistral: '' },

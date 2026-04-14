@@ -21,10 +21,10 @@ export default function CustomPromptEditor({ customPrompt, onCustomPromptChange,
                     onChange={(e) => onCustomPromptChange(e.target.value)}
                     placeholder="Enter your custom system prompt here...
                     Example: You are a helpful assistant who explains concepts clearly and concisely."
-                    maxLength={10000}
+                    maxLength={50000}
                 />
                 <div className="char-counter">
-                    {customPrompt.length} / 10,000
+                    {customPrompt.length} / 50,000
                 </div>
                 <p className="editor-hint">
                     Changes are saved automatically to your browser's local storage.

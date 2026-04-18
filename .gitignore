@@ -37,6 +37,7 @@ dev-server.js
 # IDE files
 .vscode/
 .idea/
+.claude/
 
 # Old Netlify folder
 .netlify
@@ -55,4 +56,5 @@ plan.md
 ToAdd.md
 nul
 CLAUDE.md
-Issues.mdIt 
+Issues.mdIt
+switch-model.js

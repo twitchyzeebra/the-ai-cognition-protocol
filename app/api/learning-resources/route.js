@@ -17,62 +17,28 @@ export async function GET() {
     try {
         const postsDirectory = path.join(process.cwd(), 'learning-resources');
         
-        const polishedDir = path.join(postsDirectory, 'Polished');
-        const rawDir = path.join(postsDirectory, 'Raw');
-        const humanDir = path.join(postsDirectory, 'Human');
-        
-        const resources = [];
-        
-        // Read polished documents
-        if (fs.existsSync(polishedDir)) {
-            const polishedFiles = fs.readdirSync(polishedDir).filter(f => f.toLowerCase().endsWith('.md'));
-            polishedFiles.forEach(filename => {
-                const slug = filename.replace(/\.md$/, '');
-                const filePath = path.join(polishedDir, filename);
-                const fileContent = fs.readFileSync(filePath, 'utf-8');
-                const { data, content } = matter(fileContent);
-                resources.push({
-                    slug: `Polished/${slug}`,
-                    title: slug,
-                    category: 'polished',
-                    complexity: data.complexity,
-                    chattable: data.chattable !== undefined ? data.chattable : isChattable(content),
-                    readingTime: calculateReadingTime(content)
-                });
-            });
-        }
-        
-        // Read raw documents
-        if (fs.existsSync(rawDir)) {
-            const rawFiles = fs.readdirSync(rawDir).filter(f => f.toLowerCase().endsWith('.md'));
-            rawFiles.forEach(filename => {
-                const slug = filename.replace(/\.md$/, '');
-                const filePath = path.join(rawDir, filename);
-                const fileContent = fs.readFileSync(filePath, 'utf-8');
-                const { data, content } = matter(fileContent);
-                resources.push({
-                    slug: `Raw/${slug}`,
-                    title: slug,
-                    category: 'raw',
-                    complexity: data.complexity,
-                    chattable: data.chattable !== undefined ? data.chattable : isChattable(content),
-                    readingTime: calculateReadingTime(content)
-                });
-            });
-        }
+        const categories = [
+            { dir: 'Polished', category: 'polished' },
+            { dir: 'Raw', category: 'raw' },
+            { dir: 'Human', category: 'human' },
+        ];
 
-        // Read human writings
-        if (fs.existsSync(humanDir)) {
-            const humanFiles = fs.readdirSync(humanDir).filter(f => f.toLowerCase().endsWith('.md'));
-            humanFiles.forEach(filename => {
+        const resources = [];
+
+        for (const { dir, category } of categories) {
+            const fullPath = path.join(postsDirectory, dir);
+            if (!fs.existsSync(fullPath)) continue;
+
+            const files = fs.readdirSync(fullPath).filter(f => f.toLowerCase().endsWith('.md'));
+            files.forEach(filename => {
                 const slug = filename.replace(/\.md$/, '');
-                const filePath = path.join(humanDir, filename);
+                const filePath = path.join(fullPath, filename);
                 const fileContent = fs.readFileSync(filePath, 'utf-8');
                 const { data, content } = matter(fileContent);
                 resources.push({
-                    slug: `Human/${slug}`,
+                    slug: `${dir}/${slug}`,
                     title: slug,
-                    category: 'human',
+                    category,
                     complexity: data.complexity,
                     chattable: data.chattable !== undefined ? data.chattable : isChattable(content),
                     readingTime: calculateReadingTime(content)

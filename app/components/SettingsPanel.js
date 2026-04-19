@@ -1,26 +1,13 @@
 'use client';
 
-const PROVIDER_MODEL_PRESETS = {
-    google: ['gemini-3-flash-preview'],
-    openai: ['gpt-5.2'],
-    anthropic: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
-    mistral: [
-        'mistral-large-latest',
-        'mistral-medium-latest',
-        'mistral-small-latest',
-        'magistral-medium-latest',
-        'magistral-small-latest',
-        'codestral-latest'
-    ],
-    glm: ['GLM-5', 'GLM-4.7-Flash', 'GLM-4.7-FlashX', 'GLM-5-Code'],
-};
+import { DEFAULT_MODELS } from '../../lib/constants';
 
 /**
  * LLM settings panel with provider selection, model configuration, and API key management.
  */
 export default function SettingsPanel({ llmSettings, onUpdateLlmSettings }) {
     const provider = llmSettings?.provider || 'google';
-    const presets = PROVIDER_MODEL_PRESETS[provider] || [];
+    const presets = DEFAULT_MODELS[provider] || [];
     const currentModel = llmSettings?.models?.[provider] || '';
     const isPresetSelected = presets.includes(currentModel);
 

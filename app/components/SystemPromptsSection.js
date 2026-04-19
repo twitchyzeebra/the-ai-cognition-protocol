@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { DEFAULT_SYSTEM_PROMPT } from '../../lib/constants';
 
 const PROMPT_DESCRIPTIONS = {
     "Cognitive_Tiers_With_Delivery": "A comprehensive prompt that implements cognitive tiers with structured delivery.",
@@ -71,7 +72,7 @@ export default function SystemPromptsSection({
                     className="dropdown-toggle"
                     onClick={() => setDropdownOpen(!dropdownOpen)}
                 >
-                    {promptLabel(selectedSystemPrompt || "Cognitive Tiers With Delivery")}
+                    {promptLabel(selectedSystemPrompt || DEFAULT_SYSTEM_PROMPT)}
                     <span className="dropdown-arrow">{dropdownOpen ? '▲' : '▼'}</span>
                 </button>
                 {dropdownOpen && (

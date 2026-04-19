@@ -8,6 +8,7 @@ import ChatColumn from './components/ChatColumn';
 import ResourceColumn from './components/ResourceColumn';
 import CustomPromptEditor from './components/CustomPromptEditor';
 import useChat from './hooks/useChat';
+import { DEFAULT_SYSTEM_PROMPT } from '../lib/constants';
 
 export default function Home() {
     // ── App-level state (resources, settings, UI panels) ───
@@ -19,7 +20,7 @@ export default function Home() {
     const [systemPrompts, setSystemPrompts] = useState([]);
     const [customPrompt, setCustomPrompt] = useState('');
     const [customPromptModelCollapsed, setIsCustomPromptModelCollapsed] = useState(true);
-    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState('Prism');
+    const [selectedSystemPrompt, setSelectedSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
     const [llmSettings, setLlmSettings] = useState({
         provider: 'google',
         models: { google: '', openai: '', anthropic: '', mistral: '' },
@@ -191,7 +192,7 @@ export default function Home() {
             }
             if (savedPrompt && !data.includes(savedPrompt)) {
                 localStorage.removeItem('selectedSystemPrompt');
-                setSelectedSystemPrompt('Cognitive Tiers With Delivery');
+                setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
             }
         } catch (error) {
             console.error('Failed to fetch system prompts:', error);
@@ -273,15 +274,19 @@ export default function Home() {
                 setResourceContent('');
                 setIsChatCollapsed(true);
                 setIsResourceCollapsed(false);
-                setSelectedSystemPrompt('Cognitive Tiers With Delivery');
+                setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
                 setLlmSettings({
                     provider: 'google',
-                    model: '',
+                    models: { google: '', openai: '', anthropic: '', mistral: '', glm: '' },
+                    temperature: 0.0,
+                    useProviderDefaultTemperature: true,
+                    useDeveloperKey: true,
                     apiKeys: {
                         google: '',
                         openai: '',
                         anthropic: '',
-                        mistral: ''
+                        mistral: '',
+                        glm: ''
                     }
                 });
                 localStorage.removeItem('pageState');

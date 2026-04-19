@@ -6,6 +6,7 @@ import * as OpenAIAdapter from '../../../lib/llm-providers/openai';
 import * as AnthropicAdapter from '../../../lib/llm-providers/anthropic';
 import * as MistralAdapter from '../../../lib/llm-providers/mistral';
 import * as GLMAdapter from '../../../lib/llm-providers/glm';
+import { DEFAULT_MODELS, VALIDATION_LIMITS } from '../../../lib/constants';
 
 // The 'edge' runtime has been removed to allow Node.js APIs like fs and crypto.
 
@@ -19,11 +20,11 @@ const jsonError = (error, status = 400) => new Response(JSON.stringify({ error }
 
 // Provider configuration (adapters + fallback models)
 const providers = {
-    google: { adapter: Googleadapter, defaultModel: 'gemini-3-flash-preview' },
-    openai: { adapter: OpenAIAdapter, defaultModel: 'gpt-5.2' },
-    anthropic: { adapter: AnthropicAdapter, defaultModel: 'claude-opus-4-6' },
-    mistral: { adapter: MistralAdapter, defaultModel: 'mistral-large-latest' },
-    glm: { adapter: GLMAdapter, defaultModel: 'glm-5' }
+    google: { adapter: Googleadapter, defaultModel: DEFAULT_MODELS.google[0] },
+    openai: { adapter: OpenAIAdapter, defaultModel: DEFAULT_MODELS.openai[0] },
+    anthropic: { adapter: AnthropicAdapter, defaultModel: DEFAULT_MODELS.anthropic[0] },
+    mistral: { adapter: MistralAdapter, defaultModel: DEFAULT_MODELS.mistral[0] },
+    glm: { adapter: GLMAdapter, defaultModel: DEFAULT_MODELS.glm[0] }
 };
 
 /**
@@ -83,21 +84,6 @@ function loadSystemPrompt(promptName = 'Modes') {
     }
 }
 
-function normalizeText(s) {
-    return (s || '').toString().toLowerCase();
-}
-
-function truncateText(s, max) {
-    if (!s || s.length <= max) return s || '';
-    return s.slice(0, max) + '\n... [truncated]';
-}
-
-/**
- * Builds an index of learning resources and conditionally includes full content
- * if the prompt/history mention a resource by title or slug.
- */
-
-// Next.js API Route for streaming chat responses (Node.js runtime)
 export async function POST(req) {
     try {
         // Parse request body with error handling
@@ -124,27 +110,27 @@ export async function POST(req) {
             }
         }
 
-        // Validate inputs (500KB prompt, 500 items, 2MB total history)
+        // Validate inputs
         if (!prompt?.trim()) return jsonError('Invalid prompt');
-        if (prompt.length > 500000) return jsonError(`Prompt too long. Maximum 500000 characters allowed.`, 413);
-        
-        
+        if (prompt.length > VALIDATION_LIMITS.MAX_PROMPT_LENGTH) return jsonError(`Prompt too long. Maximum ${VALIDATION_LIMITS.MAX_PROMPT_LENGTH} characters allowed.`, 413);
+
+
         // Basic validation only for now
-        if (keySan && keySan.length > 500) {
+        if (keySan && keySan.length > VALIDATION_LIMITS.MAX_API_KEY_LENGTH) {
             return jsonError('API key too long', 413);
         }
         if (Array.isArray(history)) {
-            if (history.length > 500) return jsonError(`Too many history items. Maximum 500 messages allowed.`, 413);
+            if (history.length > VALIDATION_LIMITS.MAX_HISTORY_ITEMS) return jsonError(`Too many history items. Maximum ${VALIDATION_LIMITS.MAX_HISTORY_ITEMS} messages allowed.`, 413);
             const total = history.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
-            if (total > 2000000) return jsonError(`History too long. Maximum 2000000 characters total allowed.`, 413);
+            if (total > VALIDATION_LIMITS.MAX_HISTORY_TOTAL) return jsonError(`History too long. Maximum ${VALIDATION_LIMITS.MAX_HISTORY_TOTAL} characters total allowed.`, 413);
         }
         // Validate images (optional array of { mimeType, data })
         const validatedImages = [];
         if (Array.isArray(images)) {
-            if (images.length > 5) return jsonError('Too many images. Maximum 5 per message.', 413);
+            if (images.length > VALIDATION_LIMITS.MAX_IMAGES_PER_MESSAGE) return jsonError(`Too many images. Maximum ${VALIDATION_LIMITS.MAX_IMAGES_PER_MESSAGE} per message.`, 413);
             for (const img of images) {
                 if (!img?.mimeType || !img?.data) continue;
-                if (img.data.length > 7 * 1024 * 1024) return jsonError('Image too large (max 5MB).', 413); // base64 is ~1.33x
+                if (img.data.length > VALIDATION_LIMITS.MAX_IMAGE_BASE64) return jsonError('Image too large (max 5MB).', 413); // base64 is ~1.33x
                 validatedImages.push({ mimeType: img.mimeType, data: img.data });
             }
         }
@@ -169,12 +155,9 @@ export async function POST(req) {
             content: (m.content || (m.parts?.[0]?.text || '')).toString()
         })) : [];
 
-        const finalSystemInstruction = [baseSystemInstruction].filter(Boolean).join('\n\n'); 
-
-        // Create a ReadableStream to pipe the AI response via adapter
+        const finalSystemInstruction = [baseSystemInstruction].filter(Boolean).join('\n\n');
         const stream = new ReadableStream({
             async start(controller) {
-                let abort = false;
                 const encoder = new TextEncoder();
                 const sendEvent = (type, data) => {
                     try {
@@ -201,12 +184,7 @@ export async function POST(req) {
                     let yieldedAny = false;
 
                     for await (const piece of textStream) {
-                        if (req.signal?.aborted) {
-                            abort = true;
-                            break;
-                        }
                         if (piece && typeof piece === 'object' && piece.__usage) {
-                            // Forward provider-reported token usage to the client
                             sendEvent('usage', piece.__usage);
                             continue;
                         }
@@ -217,23 +195,17 @@ export async function POST(req) {
                         }
                     }
 
-                    if (abort) {
-                        console.log("Request aborted");
-                    }
-                    else if (!yieldedAny) {
+                    if (!yieldedAny) {
                         console.warn("Adapter stream returned no text", { provider: p, model: effectiveModel });
                         sendEvent('error', { message: `Provider=${p} produced no text. model=${effectiveModel}` });
-                    } else if (!abort){
+                    } else {
                         sendEvent('done', {});
                     }
-                } catch (error) {   
+                } catch (error) {
                     console.warn("Error during stream generation.", error?.message || error);
                     sendEvent('error', { message: error.message || 'Unknown error'});
-                    
                 } finally {
-                    if(!abort){
-                        try { controller.close(); } catch (e) { /* ignore */ }
-                    }
+                    try { controller.close(); } catch (e) { /* ignore */ }
                 }
             },
         });
@@ -248,6 +220,6 @@ export async function POST(req) {
 
     } catch (error) {
         console.error("Handler error - request processing failed");
-        return jsonError('Internal Server Error: ${error.message}', 500);
+        return jsonError(`Internal Server Error: ${error.message}`, 500);
     }
 }

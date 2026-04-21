@@ -48,7 +48,7 @@ export function useFileAttachments() {
                     reader.readAsDataURL(file);
                 }));
             } else {
-                alert(`Unsupported file type: ${file.name}. Supported: .txt, .md, .png, .jpg, .jpeg, .gif, .webp`);
+                alert(`Unsupported file type: ${file.name}. Supported: .txt, .md, .png, .jpg, .jpeg, .gif, .webp, .pdf`);
             }
         }
         if (readPromises.length === 0) return;

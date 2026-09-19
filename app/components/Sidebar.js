@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useSidebarState } from '../hooks/useSidebarState';
 import CollapsibleSection from './CollapsibleSection';
 import ChatHistorySection from './ChatHistorySection';
@@ -13,19 +12,22 @@ export default function Sidebar({
     onSelectChat,
     activeChatId,
     onDownload,
-    onExportMarkdown,
     onUpload,
     learningResources,
     onSelectResource,
     onDeleteChat,
     onCustomPromptEdit,
+    onCreateCustomPrompt,
+    onDeleteCustomPrompt,
+    customPrompts,
     onRenameChat,
     systemPrompts,
     selectedSystemPrompt,
     onSelectSystemPrompt,
     onResetPageState,
     llmSettings,
-    onUpdateLlmSettings
+    onUpdateLlmSettings,
+    settingsNeedAttention
 }) {
     const {
         isCollapsed,
@@ -142,18 +144,21 @@ export default function Sidebar({
                         title="System Prompts"
                         isVisible={isPromptsVisible}
                         onToggle={() => setIsPromptsVisible(!isPromptsVisible)}
-                        count={systemPrompts.length}
+                        count={systemPrompts.length + customPrompts.length}
                     >
                         <SystemPromptsSection
                             systemPrompts={systemPrompts}
+                            customPrompts={customPrompts}
                             selectedSystemPrompt={selectedSystemPrompt}
                             onSelectSystemPrompt={onSelectSystemPrompt}
                             onCustomPromptEdit={onCustomPromptEdit}
+                            onCreateCustomPrompt={onCreateCustomPrompt}
+                            onDeleteCustomPrompt={onDeleteCustomPrompt}
                         />
                     </CollapsibleSection>
 
                     <CollapsibleSection
-                        title="Settings"
+                        title={settingsNeedAttention ? 'Settings ⚠' : 'Settings'}
                         isVisible={isSettingsVisible}
                         onToggle={() => setIsSettingsVisible(!isSettingsVisible)}
                     >

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-export default function LandingPage({ selectedSystemPrompt, learningResources, onSelectResource, onStartChat }) {
+export default function LandingPage({ promptLabel, targetLabel, learningResources, onSelectResource, onStartChat, onNewChat }) {
     return (
         <div className="landing-page-centered">
             <h1>Welcome to The AI Cognition Protocol</h1>
@@ -14,32 +14,41 @@ export default function LandingPage({ selectedSystemPrompt, learningResources, o
                 </ul>
                 <p><em><strong>Please Note:</strong> These tools are for educational and self-development purposes. They are not a substitute for professional therapy or medical advice. Please seek help from a qualified professional if you are in distress.</em></p>
             </div>
-            <p>Currently using: <strong>{selectedSystemPrompt.replace(/-/g, ' ')}</strong></p>
+
+            <div className="landing-status">
+                <span>System prompt: <strong>{promptLabel}</strong></span>
+                {targetLabel && <span>Model: <strong>{targetLabel}</strong></span>}
+                <span className="landing-status-hint">Change either in the sidebar.</span>
+            </div>
 
             <div className="panel-controls">
+                <button
+                    onClick={() => onStartChat("Tell me about yourself and how to use you.")}
+                    className="landing-option-btn primary"
+                >
+                    💬 Start talking with the AI
+                </button>
+                <button onClick={onNewChat} className="landing-option-btn">
+                    ✏️ New blank chat
+                </button>
                 <button
                     onClick={() => {
                         const lower = (s) => (s || '').toLowerCase();
                         const res = learningResources.find(r => lower(r.slug).includes('website guide') || lower(r.title).includes('website guide'));
-                        if (res && res.slug) {
-                            onSelectResource(res.slug);
-                        } else {
-                            onSelectResource('Website Guide');
-                        }
+                        onSelectResource(res?.slug || 'Website Guide');
                     }}
-                    className="panel-toggle-btn"
-                >
-                    Show Website Guide
-                </button>
-                <button
-                    onClick={() => onStartChat("Tell me about yourself and how to use you.")}
                     className="landing-option-btn"
                 >
-                    Start talking with the AI
+                    📖 Website Guide
                 </button>
                 <Link href="/resources">
                     <button className="landing-option-btn">
-                        📚 View Learning Resources
+                        📚 Learning Resources
+                    </button>
+                </Link>
+                <Link href="/canvas">
+                    <button className="landing-option-btn">
+                        ⬜ Open Canvas
                     </button>
                 </Link>
             </div>

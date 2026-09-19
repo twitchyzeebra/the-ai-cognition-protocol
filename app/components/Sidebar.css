@@ -348,15 +348,80 @@
   #sidebar .new-chat-btn { z-index: 30; }
 }
 
-/* Subdued state for Settings panel when using developer key */
-.settings-panel.subdued input:not(.devkey-toggle):not(.temperature):not(.temptoggle),
-.settings-panel.subdued select,
-.settings-panel.subdued textarea {
-  /* Visually indicate settings are not in effect while remaining fully interactive */
-  opacity: 0.55;
-  filter: grayscale(30%);
-  transition: opacity 0.2s ease, filter 0.2s ease;
+/* Settings panel */
+.settings-panel { padding: 8px 12px 12px; font-size: 13px; }
+.settings-group {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 10px;
 }
+.settings-group.subdued { opacity: 0.55; filter: grayscale(30%); transition: opacity 0.2s ease, filter 0.2s ease; }
+.settings-group.subdued:hover, .settings-group.subdued:focus-within { opacity: 1; filter: none; }
+.settings-group-title { font-weight: 600; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.settings-note { font-weight: 400; font-size: 11px; color: #9a9a9a; }
+.settings-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.settings-field > span:first-child { color: #bdbdbd; }
+.settings-field small, .settings-toggle small { color: #9a9a9a; font-size: 11px; line-height: 1.35; }
+.settings-field select, .settings-field input[type="text"], .settings-field input[type="password"], .settings-field input[type="number"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-color);
+    font-size: 13px;
+}
+.settings-toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding: 4px 0; }
+.settings-toggle > span { display: flex; flex-direction: column; gap: 2px; }
+.settings-toggle.compact { align-items: center; margin-bottom: 6px; }
+.settings-toggle input { margin-top: 3px; }
+.settings-toggle code, .settings-footnote code { font-size: 11px; background: var(--input-bg); padding: 1px 4px; border-radius: 3px; }
+.key-input-row { display: flex; gap: 6px; align-items: center; }
+.key-input-row input { flex: 1; }
+.settings-warning { font-size: 12px; color: #ffb3b3; margin: 4px 0 0; }
+.settings-footnote { font-size: 12px; color: #9a9a9a; margin: 10px 0 0; line-height: 1.5; }
+
+.mini-btn {
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+.mini-btn:hover { background: var(--accent-color); }
+.mini-btn.danger { background: #6b1010; }
+
+/* Prompt picker additions */
+.dropdown-label { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-badge {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--accent-color);
+    color: white;
+    border-radius: 4px;
+    padding: 2px 5px;
+}
+.dropdown-group {
+    padding: 8px 16px 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #9a9a9a;
+}
+.dropdown-empty { padding: 6px 16px; font-size: 13px; color: #8a8a8a; font-style: italic; }
+.dropdown-item.custom { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dropdown-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropdown-item-actions { display: none; gap: 4px; }
+.dropdown-item.custom:hover .dropdown-item-actions, .dropdown-item.custom.active .dropdown-item-actions { display: inline-flex; }
+.dropdown-item.create { color: var(--accent-color); font-weight: 600; border-top: 1px solid var(--border-color); margin-top: 4px; }
+.prompt-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.prompt-actions .sidebar-btn { width: 100%; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* System Prompt Dropdown Styles */
 .system-prompt-dropdown-container {

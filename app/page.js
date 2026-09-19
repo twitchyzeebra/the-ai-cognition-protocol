@@ -1,14 +1,29 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import chatDB from '../lib/database';
 import LandingPage from './components/LandingPage';
 import ChatColumn from './components/ChatColumn';
 import ResourceColumn from './components/ResourceColumn';
 import CustomPromptEditor from './components/CustomPromptEditor';
-import useChat from './hooks/useChat';
-import { DEFAULT_SYSTEM_PROMPT } from '../lib/constants';
+import { builtinLabel } from './components/SystemPromptsSection';
+import useChat, { resolveTarget } from './hooks/useChat';
+import { useCustomPrompts, customPromptKey, isCustomPromptKey } from './hooks/useCustomPrompts';
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_ANTHROPIC_EFFORT, PROVIDER_LABELS } from '../lib/constants';
+
+const PROVIDERS = ['google', 'openai', 'anthropic', 'mistral', 'glm'];
+const emptyPerProvider = () => Object.fromEntries(PROVIDERS.map(p => [p, '']));
+
+const defaultLlmSettings = () => ({
+    provider: 'google',
+    models: emptyPerProvider(),
+    temperature: 0.7,
+    useProviderDefaultTemperature: true,
+    useDeveloperKey: true,
+    effort: DEFAULT_ANTHROPIC_EFFORT,
+    apiKeys: emptyPerProvider()
+});
 
 export default function Home() {
     // ── App-level state (resources, settings, UI panels) ───
@@ -18,26 +33,30 @@ export default function Home() {
     const [isChatCollapsed, setIsChatCollapsed] = useState(true);
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
     const [systemPrompts, setSystemPrompts] = useState([]);
-    const [customPrompt, setCustomPrompt] = useState('');
-    const [customPromptModelCollapsed, setIsCustomPromptModelCollapsed] = useState(true);
+    const [editorCollapsed, setEditorCollapsed] = useState(true);
+    const [editingPromptKey, setEditingPromptKey] = useState(null);
     const [selectedSystemPrompt, setSelectedSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
-    const [llmSettings, setLlmSettings] = useState({
-        provider: 'google',
-        models: { google: '', openai: '', anthropic: '', mistral: '' },
-        temperature: 0.0,
-        useProviderDefaultTemperature: true,
-        useDeveloperKey: true,
-        apiKeys: {
-            google: '',
-            openai: '',
-            anthropic: '',
-            mistral: ''
-        }
-    });
+    const [llmSettings, setLlmSettings] = useState(defaultLlmSettings);
     const [isLoaded, setIsLoaded] = useState(false);
 
+    // ── Custom prompts (IndexedDB) ─────────────────────────
+    const prompts = useCustomPrompts();
+    const customPromptList = useMemo(
+        () => prompts.customPrompts.map(p => ({ ...p, key: customPromptKey(p.id) })),
+        [prompts.customPrompts]
+    );
+    const selectedCustom = prompts.getPrompt(selectedSystemPrompt);
+    const customPromptText = selectedCustom?.content || '';
+
     // ── Chat hook ──────────────────────────────────────────
-    const chat = useChat({ selectedSystemPrompt, customPrompt, llmSettings });
+    const chat = useChat({ selectedSystemPrompt, customPrompt: customPromptText, llmSettings });
+
+    const target = resolveTarget(llmSettings);
+    const targetLabel = `${PROVIDER_LABELS[target.provider] || target.provider} · ${target.model || 'default'}`;
+    const settingsNeedAttention = !target.devKey && !(llmSettings.apiKeys?.[target.provider] || '').trim();
+    const promptLabel = isCustomPromptKey(selectedSystemPrompt)
+        ? (selectedCustom?.name || 'Custom prompt')
+        : builtinLabel(selectedSystemPrompt);
 
     // ── Initial load ───────────────────────────────────────
     useEffect(() => {
@@ -60,23 +79,17 @@ export default function Home() {
                         if (parsedState.isResourceCollapsed !== undefined) setIsResourceCollapsed(parsedState.isResourceCollapsed);
                         if (parsedState.selectedSystemPrompt) setSelectedSystemPrompt(parsedState.selectedSystemPrompt);
 
+                        const saved = parsedState.llmSettings || {};
+                        const defaults = defaultLlmSettings();
                         setLlmSettings({
-                            provider: parsedState.llmSettings?.provider || 'google',
-                            models: parsedState.llmSettings?.models || {
-                                google: parsedState.llmSettings?.provider === 'google' ? (parsedState.llmSettings?.model || '') : '',
-                                openai: parsedState.llmSettings?.provider === 'openai' ? (parsedState.llmSettings?.model || '') : '',
-                                anthropic: parsedState.llmSettings?.provider === 'anthropic' ? (parsedState.llmSettings?.model || '') : '',
-                                mistral: parsedState.llmSettings?.provider === 'mistral' ? (parsedState.llmSettings?.model || '') : ''
-                            },
-                            temperature: typeof parsedState.llmSettings?.temperature === 'number' ? parsedState.llmSettings.temperature : 0.7,
-                            useProviderDefaultTemperature: !!parsedState.llmSettings?.useProviderDefaultTemperature,
-                            useDeveloperKey: !!parsedState.llmSettings?.useDeveloperKey,
-                            apiKeys: parsedState.llmSettings?.apiKeys || {
-                                google: '',
-                                openai: '',
-                                anthropic: '',
-                                mistral: ''
-                            }
+                            ...defaults,
+                            provider: PROVIDERS.includes(saved.provider) ? saved.provider : 'google',
+                            models: { ...defaults.models, ...(saved.models || {}) },
+                            temperature: typeof saved.temperature === 'number' ? saved.temperature : 0.7,
+                            useProviderDefaultTemperature: saved.useProviderDefaultTemperature !== false,
+                            useDeveloperKey: saved.useDeveloperKey !== false,
+                            effort: saved.effort || DEFAULT_ANTHROPIC_EFFORT,
+                            apiKeys: { ...defaults.apiKeys, ...(saved.apiKeys || {}) }
                         });
                     } catch (error) {
                         console.error('Failed to parse stored UI state - using defaults');
@@ -120,6 +133,19 @@ export default function Home() {
         fetchSystemPrompts();
     }, []);
 
+    // Legacy single "Custom Prompt" → migrated IndexedDB prompt
+    useEffect(() => {
+        if (!prompts.loaded || selectedSystemPrompt !== 'Custom Prompt') return;
+        handleSelectSystemPrompt(prompts.migratedKey || DEFAULT_SYSTEM_PROMPT);
+    }, [prompts.loaded, prompts.migratedKey, selectedSystemPrompt]);
+
+    // Selected custom prompt was deleted (possibly in another tab) → fall back
+    useEffect(() => {
+        if (prompts.loaded && isCustomPromptKey(selectedSystemPrompt) && !prompts.getPrompt(selectedSystemPrompt)) {
+            handleSelectSystemPrompt(DEFAULT_SYSTEM_PROMPT);
+        }
+    }, [prompts.loaded, prompts.customPrompts, selectedSystemPrompt]);
+
     // ── Persist UI state to localStorage ───────────────────
     useEffect(() => {
         if (!isLoaded) return;
@@ -159,13 +185,6 @@ export default function Home() {
         return () => window.removeEventListener('unhandledrejection', handler);
     }, []);
 
-    // Persist custom prompt
-    useEffect(() => {
-        if (customPrompt && customPrompt.length > 0) {
-            localStorage.setItem('customPrompt', customPrompt);
-        }
-    }, [customPrompt]);
-
     // ── Data fetching ──────────────────────────────────────
     const fetchLearningResources = async () => {
         try {
@@ -181,16 +200,12 @@ export default function Home() {
         try {
             const response = await fetch('/api/system-prompts');
             const data = await response.json();
-            setSystemPrompts(data);
-            const saveCustomPrompt = localStorage.getItem('customPrompt');
-            if (saveCustomPrompt) {
-                setCustomPrompt(saveCustomPrompt);
-            }
+            const builtins = Array.isArray(data) ? data.filter(p => p !== 'Custom Prompt') : [];
+            setSystemPrompts(builtins);
             const savedPrompt = localStorage.getItem('selectedSystemPrompt');
-            if (savedPrompt && data.includes(savedPrompt)) {
+            if (savedPrompt && (builtins.includes(savedPrompt) || isCustomPromptKey(savedPrompt) || savedPrompt === 'Custom Prompt')) {
                 setSelectedSystemPrompt(savedPrompt);
-            }
-            if (savedPrompt && !data.includes(savedPrompt)) {
+            } else if (savedPrompt) {
                 localStorage.removeItem('selectedSystemPrompt');
                 setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
             }
@@ -216,9 +231,39 @@ export default function Home() {
         }
     };
 
-    const handleCustomPromptEdit = () => {
-        setIsCustomPromptModelCollapsed(prev => !prev);
+    const handleSelectSystemPrompt = useCallback((promptName) => {
+        setSelectedSystemPrompt(promptName);
+        localStorage.setItem('selectedSystemPrompt', promptName);
+    }, []);
+
+    const handleCustomPromptEdit = (key) => {
+        const k = key || (isCustomPromptKey(selectedSystemPrompt) ? selectedSystemPrompt : null);
+        if (!k) return;
+        if (!editorCollapsed && editingPromptKey === k) {
+            setEditorCollapsed(true);
+            return;
+        }
+        setEditingPromptKey(k);
+        setEditorCollapsed(false);
     };
+
+    const handleCreateCustomPrompt = async () => {
+        const n = prompts.customPrompts.length + 1;
+        const key = await prompts.createPrompt(`Custom Prompt ${n}`, '');
+        handleSelectSystemPrompt(key);
+        setEditingPromptKey(key);
+        setEditorCollapsed(false);
+    };
+
+    const handleDeleteCustomPrompt = async (key) => {
+        const p = prompts.getPrompt(key);
+        if (!p) return;
+        await prompts.deletePrompt(p.id);
+        if (editingPromptKey === key) { setEditingPromptKey(null); setEditorCollapsed(true); }
+        if (selectedSystemPrompt === key) handleSelectSystemPrompt(DEFAULT_SYSTEM_PROMPT);
+    };
+
+    const editingPrompt = prompts.getPrompt(editingPromptKey);
 
     const handleNewChat = () => {
         chat.clearChat();
@@ -245,11 +290,6 @@ export default function Home() {
         }
     };
 
-    const handleSelectSystemPrompt = (promptName) => {
-        setSelectedSystemPrompt(promptName);
-        localStorage.setItem('selectedSystemPrompt', promptName);
-    };
-
     const handleUpdateLlmSettings = (partial) => {
         setLlmSettings(prev => {
             const newSettings = { ...prev, ...partial };
@@ -265,7 +305,7 @@ export default function Home() {
     };
 
     const handleResetPageState = async () => {
-        if (window.confirm('Are you sure you want to reset the page state? This will clear all chats and selections.')) {
+        if (window.confirm('Are you sure you want to reset the page state? This will clear all chats and selections. Your custom prompts are kept.')) {
             try {
                 await chatDB.clearAllData();
                 chat.clearChat();
@@ -274,21 +314,9 @@ export default function Home() {
                 setResourceContent('');
                 setIsChatCollapsed(true);
                 setIsResourceCollapsed(false);
+                setEditorCollapsed(true);
                 setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
-                setLlmSettings({
-                    provider: 'google',
-                    models: { google: '', openai: '', anthropic: '', mistral: '', glm: '' },
-                    temperature: 0.0,
-                    useProviderDefaultTemperature: true,
-                    useDeveloperKey: true,
-                    apiKeys: {
-                        google: '',
-                        openai: '',
-                        anthropic: '',
-                        mistral: '',
-                        glm: ''
-                    }
-                });
+                setLlmSettings(defaultLlmSettings());
                 localStorage.removeItem('pageState');
                 localStorage.removeItem('chatHistory');
                 localStorage.removeItem('selectedSystemPrompt');
@@ -341,6 +369,9 @@ export default function Home() {
     };
 
     // ── Render ─────────────────────────────────────────────
+    const showEditor = !editorCollapsed && !!editingPrompt;
+    const showLanding = isChatCollapsed && (!selectedResource || isResourceCollapsed) && !showEditor;
+
     return (
         <div id="container">
             <Sidebar
@@ -355,19 +386,25 @@ export default function Home() {
                 onDeleteChat={chat.deleteChat}
                 onRenameChat={chat.renameChat}
                 onCustomPromptEdit={handleCustomPromptEdit}
+                onCreateCustomPrompt={handleCreateCustomPrompt}
+                onDeleteCustomPrompt={handleDeleteCustomPrompt}
+                customPrompts={customPromptList}
                 systemPrompts={systemPrompts}
                 selectedSystemPrompt={selectedSystemPrompt}
                 onSelectSystemPrompt={handleSelectSystemPrompt}
                 onResetPageState={handleResetPageState}
                 llmSettings={llmSettings}
                 onUpdateLlmSettings={handleUpdateLlmSettings}
+                settingsNeedAttention={settingsNeedAttention}
             />
             <main id="main-content">
-                {isChatCollapsed && (!selectedResource || isResourceCollapsed) && customPromptModelCollapsed ? (
+                {showLanding ? (
                     <LandingPage
-                        selectedSystemPrompt={selectedSystemPrompt}
+                        promptLabel={promptLabel}
+                        targetLabel={targetLabel}
                         learningResources={learningResources}
                         onSelectResource={handleSelectResource}
+                        onNewChat={handleNewChat}
                         onStartChat={(text) => {
                             chat.setInput(text);
                             setIsChatCollapsed(false);
@@ -376,7 +413,7 @@ export default function Home() {
                 ) : (
                     <>
                         {!isChatCollapsed && (
-                            <ChatColumn chat={chat} onCollapse={() => setIsChatCollapsed(true)} />
+                            <ChatColumn chat={chat} targetLabel={targetLabel} onCollapse={() => setIsChatCollapsed(true)} />
                         )}
                         {selectedResource && !isResourceCollapsed && (
                             <ResourceColumn
@@ -385,11 +422,12 @@ export default function Home() {
                                 onCollapse={() => setIsResourceCollapsed(true)}
                             />
                         )}
-                        {selectedSystemPrompt === 'Custom Prompt' && !customPromptModelCollapsed && (
+                        {showEditor && (
                             <CustomPromptEditor
-                                customPrompt={customPrompt}
-                                onCustomPromptChange={setCustomPrompt}
-                                onCollapse={() => setIsCustomPromptModelCollapsed(true)}
+                                prompt={editingPrompt}
+                                onChange={(changes) => prompts.updatePrompt(editingPrompt.id, changes)}
+                                onDelete={() => handleDeleteCustomPrompt(editingPromptKey)}
+                                onCollapse={() => setEditorCollapsed(true)}
                             />
                         )}
                     </>

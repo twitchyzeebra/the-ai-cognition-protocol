@@ -6,7 +6,10 @@ import * as OpenAIAdapter from '../../../lib/llm-providers/openai';
 import * as AnthropicAdapter from '../../../lib/llm-providers/anthropic';
 import * as MistralAdapter from '../../../lib/llm-providers/mistral';
 import * as GLMAdapter from '../../../lib/llm-providers/glm';
-import { DEFAULT_MODELS, VALIDATION_LIMITS } from '../../../lib/constants';
+import {
+    DEFAULT_MODELS, VALIDATION_LIMITS, CUSTOM_PROMPT_PREFIX,
+    DEV_KEY_PROVIDER, DEV_KEY_MODEL, ANTHROPIC_EFFORT_LEVELS
+} from '../../../lib/constants';
 
 // The 'edge' runtime has been removed to allow Node.js APIs like fs and crypto.
 
@@ -42,7 +45,7 @@ function decrypt(encryptedData, key) {
     decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
 
     const decrypted = Buffer.concat([decipher.update(Buffer.from(encryptedData.encrypted, 'hex')), decipher.final()]);
-    
+
     return decrypted.toString('utf8');
 }
 
@@ -50,10 +53,15 @@ function decrypt(encryptedData, key) {
 function loadSystemPrompt(promptName = 'Modes') {
     const fallbackPrompt = "You are a helpful AI assistant.";
     try {
-        // Use the specified prompt name or default to Modes.json
-        const fileName = `${promptName}.json`;
+        // Prevent path traversal: prompt names are bare file names.
+        const safeName = path.basename(String(promptName || ''));
+        if (!safeName || safeName !== promptName) {
+            console.warn(`Rejected system prompt name: ${JSON.stringify(promptName)}`);
+            return fallbackPrompt;
+        }
+        const fileName = `${safeName}.json`;
         const encryptedPath = path.join(process.cwd(), 'SystemPrompts', 'Encrypted', fileName);
-        
+
         if (!fs.existsSync(encryptedPath)) {
             console.log(`Encrypted system prompt file ${fileName} not found, using fallback.`);
             return fallbackPrompt;
@@ -64,7 +72,7 @@ function loadSystemPrompt(promptName = 'Modes') {
             console.error("Error: SYSTEM_PROMPT_KEY is invalid or not found in .env - using fallback prompt.");
             return fallbackPrompt;
         }
-        
+
         const key = Buffer.from(encryptionKey.trim(), 'hex');
         const encryptedData = JSON.parse(fs.readFileSync(encryptedPath, 'utf8'));
 
@@ -84,6 +92,9 @@ function loadSystemPrompt(promptName = 'Modes') {
     }
 }
 
+const isCustomPromptSelection = (name) =>
+    name === 'Custom Prompt' || (typeof name === 'string' && name.startsWith(CUSTOM_PROMPT_PREFIX));
+
 export async function POST(req) {
     try {
         // Parse request body with error handling
@@ -94,10 +105,15 @@ export async function POST(req) {
             return jsonError('Invalid JSON request body');
         }
 
-        const { prompt, history, systemPrompt: selectedPrompt, customPrompt, provider, apiKey, model, temperature, images } = requestData;
-        const p = (provider || 'google').toLowerCase().trim();
-        const keySan = requestData.useDeveloperKey ? process.env.ANTHROPIC_API_KEY?.trim() : apiKey?.trim();
-        const modelSan = (model || '').trim();
+        const { prompt, history, systemPrompt: selectedPrompt, customPrompt, apiKey, model, temperature, images, effort } = requestData;
+        const useDeveloperKey = !!requestData.useDeveloperKey;
+
+        // Developer key always routes to the configured Anthropic model; the client
+        // cannot pick a different provider/model on the server's key.
+        const p = useDeveloperKey ? DEV_KEY_PROVIDER : (requestData.provider || 'google').toLowerCase().trim();
+        const keySan = useDeveloperKey ? process.env.ANTHROPIC_API_KEY?.trim() : apiKey?.trim();
+        const modelSan = useDeveloperKey ? DEV_KEY_MODEL : (model || '').trim();
+
         const tempNum = Number.isFinite(Number(temperature)) ? Number(temperature) : undefined;
         let temperatureUsed = undefined;
         if (typeof tempNum === 'number') {
@@ -109,6 +125,7 @@ export async function POST(req) {
                 temperatureUsed = Math.min(2, Math.max(0, tempNum));
             }
         }
+        const effortUsed = p === 'anthropic' && ANTHROPIC_EFFORT_LEVELS.includes(effort) ? effort : undefined;
 
         // Validate inputs
         if (!prompt?.trim()) return jsonError('Invalid prompt');
@@ -135,17 +152,20 @@ export async function POST(req) {
             }
         }
         let baseSystemInstruction;
-        if (selectedPrompt === 'Custom Prompt') {
-            baseSystemInstruction = customPrompt;
-        }
-        else{
+        if (isCustomPromptSelection(selectedPrompt)) {
+            baseSystemInstruction = typeof customPrompt === 'string' ? customPrompt : '';
+        } else {
             baseSystemInstruction = loadSystemPrompt(selectedPrompt);
         }
 
         // Get provider config and validate
         const config = providers[p];
         if (!config) return jsonError(`Unsupported provider: ${p}`);
-        if (!keySan) return jsonError('Missing API key. Provide your key in Settings.');
+        if (!keySan) {
+            return jsonError(useDeveloperKey
+                ? 'Developer key is not configured on the server (ANTHROPIC_API_KEY missing).'
+                : 'Missing API key. Provide your key in Settings.', useDeveloperKey ? 503 : 400);
+        }
 
         const effectiveModel = modelSan || config.defaultModel;
 
@@ -169,7 +189,7 @@ export async function POST(req) {
                 };
 
                 try {
-                    sendEvent('start', {});
+                    sendEvent('start', { provider: p, model: effectiveModel });
 
                     const textStream = config.adapter.sendMessageStream({
                         apiKey: keySan,
@@ -178,18 +198,20 @@ export async function POST(req) {
                         history: normalizedHistory,
                         systemInstruction: finalSystemInstruction,
                         temperature: temperatureUsed,
+                        effort: effortUsed,
                         images: validatedImages.length > 0 ? validatedImages : undefined,
                     });
 
                     let yieldedAny = false;
 
                     for await (const piece of textStream) {
-                        if (piece && typeof piece === 'object' && piece.__usage) {
-                            sendEvent('usage', piece.__usage);
+                        if (piece && typeof piece === 'object') {
+                            if (piece.__usage) sendEvent('usage', piece.__usage);
+                            if (piece.__notice) sendEvent('notice', { message: piece.__notice });
                             continue;
                         }
                         const text = typeof piece === 'string' ? piece : '';
-                        if (text.trim().length > 0) {
+                        if (text.length > 0) {
                             yieldedAny = true;
                             sendEvent('chunk', { text });
                         }

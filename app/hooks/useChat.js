@@ -3,12 +3,9 @@ import chatDB from '../../lib/database';
 import { convertMarkdownToPdf } from '../utils/markdownToPdf';
 import { useApi } from './useApi';
 import { useFileAttachments } from './useFileAttachments';
-import { DEFAULT_MODELS } from '../../lib/constants';
+import { CUSTOM_PROMPT_PREFIX, DEV_KEY_PROVIDER, DEV_KEY_MODEL } from '../../lib/constants';
 
 // ── Constants ─────────────────────────────────────────────
-const CUSTOM_PROMPT_KEY = 'Custom Prompt';
-const DEV_KEY_PROVIDER = 'anthropic';
-const DEV_KEY_MODEL = DEFAULT_MODELS.anthropic[0];
 const TITLE_MAX = 50;
 const SCROLL_THRESHOLD = 30;
 const CHARS_PER_TOKEN = 4;
@@ -28,6 +25,9 @@ const makeChatTitle = (text) => {
 
 const sanitizeFilename = (name) =>
     (name || 'chat').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim().slice(0, 120) || 'chat';
+
+const isCustomPrompt = (name) =>
+    name === 'Custom Prompt' || (typeof name === 'string' && name.startsWith(CUSTOM_PROMPT_PREFIX));
 
 const buildDbMeta = (userMessage, hasAttachments) => hasAttachments ? {
     displayContent: userMessage.displayContent,
@@ -52,44 +52,54 @@ function parseMarkdownChat(mdText) {
     return { title, messages };
 }
 
+/** Provider/model the next request will actually use (dev key overrides both). */
+export function resolveTarget(llmSettings) {
+    const settings = llmSettings || {};
+    if (settings.useDeveloperKey) return { provider: DEV_KEY_PROVIDER, model: DEV_KEY_MODEL, devKey: true };
+    const provider = settings.provider || 'google';
+    return { provider, model: (settings.models || {})[provider] || '', devKey: false };
+}
+
 function buildPayload({ prompt, history, selectedSystemPrompt, customPrompt, llmSettings }) {
+    const settings = llmSettings || {};
+    const target = resolveTarget(settings);
     const payload = {
         prompt,
         history: history.map(m => ({ role: m.role, content: m.content })),
         systemPrompt: selectedSystemPrompt,
-        provider: llmSettings.provider,
-        apiKey: llmSettings.apiKeys[llmSettings.provider],
-        model: llmSettings.models?.[llmSettings.provider] || ''
+        provider: target.provider,
+        apiKey: target.devKey ? '' : ((settings.apiKeys || {})[target.provider] || ''),
+        model: target.model
     };
-    if (!llmSettings?.useProviderDefaultTemperature && typeof llmSettings?.temperature === 'number') {
-        payload.temperature = llmSettings.temperature;
+    if (!settings.useProviderDefaultTemperature && typeof settings.temperature === 'number') {
+        payload.temperature = settings.temperature;
     }
-    if (selectedSystemPrompt === CUSTOM_PROMPT_KEY) payload.customPrompt = customPrompt;
-    if (llmSettings.useDeveloperKey) {
-        payload.provider = DEV_KEY_PROVIDER;
-        payload.model = DEV_KEY_MODEL;
-        payload.useDeveloperKey = true;
-    }
+    if (target.provider === 'anthropic' && settings.effort) payload.effort = settings.effort;
+    if (isCustomPrompt(selectedSystemPrompt)) payload.customPrompt = customPrompt || '';
+    if (target.devKey) payload.useDeveloperKey = true;
     return payload;
 }
 
 // Replace last assistant bubble's content; append if none or (with mustBeEmpty) if non-empty.
-const writeAssistant = (setMessages, text, { mustBeEmpty = false } = {}) => {
+const writeAssistant = (setMessages, text, { mustBeEmpty = false, extra } = {}) => {
     setMessages(prev => {
         const last = prev[prev.length - 1];
         const canReplace = last?.role === 'assistant' && (!mustBeEmpty || !last.content);
         if (canReplace) {
             const updated = [...prev];
-            updated[updated.length - 1] = { ...last, content: text };
+            updated[updated.length - 1] = { ...last, content: text, ...(extra || {}) };
             return updated;
         }
-        return [...prev, { role: 'assistant', content: text }];
+        return [...prev, { role: 'assistant', content: text, ...(extra || {}) }];
     });
 };
 
 /**
  * useChat — central chat state and operations.
  * Delegates to: useApi (streaming), useFileAttachments (files).
+ *
+ * @param {{ selectedSystemPrompt: string, customPrompt: string, llmSettings: object }} props
+ *   customPrompt = text of the currently selected custom prompt (ignored for built-ins)
  */
 export default function useChat({ selectedSystemPrompt, customPrompt, llmSettings }) {
     const [messages, setMessages] = useState([]);
@@ -101,6 +111,7 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
     const [usageLast, setUsageLast] = useState(null);
     const [usageTotals, setUsageTotals] = useState({ input: 0, output: 0, total: 0 });
     const [hasRetry, setHasRetry] = useState(false);
+    const [notice, setNotice] = useState('');
 
     const api = useApi();
     const files = useFileAttachments();
@@ -174,6 +185,7 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
         setActiveChatId(null);
         setMessages([]);
         setInput('');
+        setNotice('');
     }, []);
 
     const stopGeneration = useCallback(() => {
@@ -233,40 +245,47 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
     }, [activeChatId, chatHistory, messages]);
 
     const importChat = useCallback(async ({ title, messages: chatMessages }) => {
-        const model = llmSettings.models?.[llmSettings.provider] || '';
-        const newId = await chatDB.createChat(title, selectedSystemPrompt, llmSettings.provider, model);
+        const target = resolveTarget(llmSettings);
+        const newId = await chatDB.createChat(title, selectedSystemPrompt, target.provider, target.model);
         for (const m of chatMessages) {
             await chatDB.addMessage(newId, m.role === 'assistant' ? 'assistant' : 'user', m.content);
         }
         const now = new Date();
         setChatHistory(prev => [...prev, {
             id: newId, title, created: now, updated: now,
-            systemPrompt: selectedSystemPrompt, provider: llmSettings.provider, model
+            systemPrompt: selectedSystemPrompt, provider: target.provider, model: target.model
         }]);
         setActiveChatId(newId);
         return newId;
     }, [selectedSystemPrompt, llmSettings]);
 
     const sendMessage = useCallback(async () => {
-        if (!input.trim()) return;
+        const hasReadyFiles = files.readyFiles.length > 0;
+        if (!input.trim() && !hasReadyFiles) return;
+        if (files.isProcessing) {
+            setNotice('Still reading attachments. Wait a moment and send again.');
+            return;
+        }
         if (activeChatId && !messagesLoaded) {
             alert('Loading chat messages, please try again in a moment.');
             return;
         }
 
         setHasRetry(false);
+        setNotice('');
         abortedRef.current = false;
 
         // ── 1. Build user message ────────────────────────────
-        const attached = files.attachedFiles;
-        const hasText = attached.some(f => f.type === 'text');
+        const attached = files.readyFiles;
+        const hasText = attached.some(f => f.type === 'text' || f.type === 'document');
         const hasImages = attached.some(f => f.type === 'image');
         const hasAttachments = attached.length > 0;
 
-        const fullPrompt = hasText ? files.formatForPrompt() + '\n\n' + input : input;
+        const typed = input.trim() ? input : (hasAttachments ? 'See the attached file(s).' : input);
+        const fullPrompt = hasText ? files.formatForPrompt() + '\n\n' + typed : typed;
         const userMessage = { role: 'user', content: fullPrompt };
         if (hasAttachments) {
-            userMessage.displayContent = input;
+            userMessage.displayContent = typed;
             userMessage.files = attached.map(f => ({ name: f.name, type: f.type }));
         }
         if (hasImages) {
@@ -277,9 +296,10 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
 
         // ── 2. Update UI state ──────────────────────────────
         const priorMessages = messages;
-        lastUserPromptRef.current = fullPrompt;
+        lastUserPromptRef.current = typed;
         setMessages([...priorMessages, userMessage]);
         setInput('');
+        const imagePayload = hasImages ? files.extractImages() : undefined;
         files.clearFiles();
         setIsLoading(true);
 
@@ -289,9 +309,9 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
         try {
             // ── 3. Create chat if needed; persist user message ─
             if (!chatId) {
-                const title = makeChatTitle(input);
-                const model = llmSettings.models?.[llmSettings.provider] || '';
-                chatId = await chatDB.createChat(title, selectedSystemPrompt, llmSettings.provider, model);
+                const title = makeChatTitle(typed);
+                const target = resolveTarget(llmSettings);
+                chatId = await chatDB.createChat(title, selectedSystemPrompt, target.provider, target.model);
                 // Mark this chat as locally created BEFORE setActiveChatId so the
                 // load effect skips the DB reload race (would blank the user msg).
                 setActiveChatId(chatId);
@@ -299,7 +319,7 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
                 const now = new Date();
                 setChatHistory(prev => [...prev, {
                     id: chatId, title, created: now, updated: now,
-                    systemPrompt: selectedSystemPrompt, provider: llmSettings.provider, model
+                    systemPrompt: selectedSystemPrompt, provider: target.provider, model: target.model
                 }]);
             }
             await chatDB.addMessage(chatId, userMessage.role, userMessage.content, dbMeta);
@@ -312,25 +332,31 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
                 history: priorMessages,
                 selectedSystemPrompt, customPrompt, llmSettings
             });
-            if (hasImages) payload.images = files.extractImages();
+            if (imagePayload) payload.images = imagePayload;
 
             setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
             let aiText = '';
             let gotUsage = false;
             let errored = false;
+            let servedModel = payload.model;
 
             for await (const event of api.streamEvents(payload)) {
-                if (event.type === 'chunk') {
+                if (event.type === 'start') {
+                    if (event.model) servedModel = event.model;
+                } else if (event.type === 'chunk') {
                     aiText += event.text;
                     writeAssistant(setMessages, aiText);
                 } else if (event.type === 'usage') {
                     gotUsage = true;
+                    if (event.model) servedModel = event.model;
                     setUsageLast(event);
                     setUsageTotals(prev => ({
                         input: prev.input + event.inputTokens,
                         output: prev.output + event.outputTokens,
                         total: prev.total + event.totalTokens
                     }));
+                } else if (event.type === 'notice') {
+                    setNotice(event.message);
                 } else if (event.type === 'error') {
                     errored = true;
                     const errText = `[Error] ${event.message}`;
@@ -366,7 +392,8 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
 
             // ── 7. Persist assistant response ──────────────────
             if (!errored && aiText.trim()) {
-                await chatDB.addMessage(chatId, 'assistant', aiText);
+                writeAssistant(setMessages, aiText, { extra: { model: servedModel } });
+                await chatDB.addMessage(chatId, 'assistant', aiText, { model: servedModel });
             }
         } catch (error) {
             console.error('API error during chat request:', error);
@@ -383,9 +410,12 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
 
     return {
         messages, input, isLoading, chatHistory, activeChatId,
-        messagesLoaded, usageLast, usageTotals, chatLogRef, hasRetry,
-        setInput, setActiveChatId, setChatHistory,
+        messagesLoaded, usageLast, usageTotals, chatLogRef, hasRetry, notice,
+        setInput, setActiveChatId, setChatHistory, setNotice,
         attachedFiles: files.attachedFiles,
+        attachError: files.attachError,
+        dismissAttachError: files.dismissError,
+        isProcessingFiles: files.isProcessing,
         addFiles: files.addFiles,
         removeFile: files.removeFile,
         sendMessage, deleteChat, renameChat, downloadChat, importChat,

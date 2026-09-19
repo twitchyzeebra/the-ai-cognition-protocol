@@ -4,7 +4,11 @@
  *
  * @param {Object} payload - The request payload for /api/chat
  * @param {AbortSignal} [signal] - Optional AbortSignal for cancellation
- * @yields {{ type: 'chunk', text: string } | { type: 'usage', inputTokens: number, outputTokens: number, totalTokens: number } | { type: 'done' }}
+ * @yields {{ type: 'start', provider?: string, model?: string }
+ *        | { type: 'chunk', text: string }
+ *        | { type: 'usage', inputTokens: number, outputTokens: number, totalTokens: number, model?: string }
+ *        | { type: 'notice', message: string }
+ *        | { type: 'done' }}
  * @throws {Error} On HTTP failure or server-sent error events
  */
 export async function* streamChat(payload, signal) {
@@ -55,6 +59,9 @@ export async function* streamChat(payload, signal) {
             return null;
         }
 
+        if (json.type === 'start') {
+            return { type: 'start', provider: json.provider, model: json.model };
+        }
         if (json.type === 'chunk' && typeof json.text === 'string') {
             return { type: 'chunk', text: json.text };
         }
@@ -64,7 +71,11 @@ export async function* streamChat(payload, signal) {
                 inputTokens: Number(json.inputTokens || 0),
                 outputTokens: Number(json.outputTokens || 0),
                 totalTokens: Number(json.totalTokens || 0),
+                model: json.model,
             };
+        }
+        if (json.type === 'notice' && typeof json.message === 'string') {
+            return { type: 'notice', message: json.message };
         }
         if (json.type === 'error') {
             throw new Error(json.message || 'Unknown streaming error');

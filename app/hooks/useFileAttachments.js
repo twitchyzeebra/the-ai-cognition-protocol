@@ -1,91 +1,121 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { VALIDATION_LIMITS, FILE_ATTACHMENTS } from '../../lib/constants';
+import { extractDocumentText } from '../utils/extractDocumentText';
 
-const { TEXT_EXTENSIONS, IMAGE_EXTENSIONS } = FILE_ATTACHMENTS;
+const { TEXT_EXTENSIONS, DOCUMENT_EXTENSIONS, IMAGE_EXTENSIONS } = FILE_ATTACHMENTS;
 const { MAX_TEXT_SIZE, MAX_IMAGE_SIZE } = VALIDATION_LIMITS;
 
+const extOf = (name) => (name || '').slice((name || '').lastIndexOf('.')).toLowerCase();
+
+const readAsDataUrl = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+    reader.readAsDataURL(file);
+});
+
+const supportedList = [...TEXT_EXTENSIONS, ...DOCUMENT_EXTENSIONS, ...IMAGE_EXTENSIONS].join(', ');
+
 /**
- * useFileAttachments — handles file validation, reading, and attachment state.
+ * useFileAttachments — validation, reading, document text extraction, attachment state.
  *
- * @returns {{
- *   attachedFiles: Array<{ name: string, content?: string, dataUrl?: string, mimeType: string, type: 'text'|'image' }>,
- *   addFiles: (fileList: FileList|File[]) => void,
- *   removeFile: (index: number) => void,
- *   clearFiles: () => void,
- *   formatForPrompt: () => string,
- *   extractImages: () => Array<{ mimeType: string, data: string }>,
- * }}
+ * Attachment shape:
+ *   { id, name, type: 'text'|'document'|'image', status: 'ready'|'processing'|'error',
+ *     content?: string, dataUrl?: string, mimeType: string, meta?: string, error?: string }
  */
 export function useFileAttachments() {
     const [attachedFiles, setAttachedFiles] = useState([]);
+    const [attachError, setAttachError] = useState('');
+    const nextId = useRef(1);
+
+    const patch = (id, changes) =>
+        setAttachedFiles(prev => prev.map(f => f.id === id ? { ...f, ...changes } : f));
 
     const addFiles = useCallback((fileList) => {
-        const readPromises = [];
-        for (const file of fileList) {
-            const ext = (file.name || '').slice(file.name.lastIndexOf('.')).toLowerCase();
+        const rejected = [];
+        const additions = [];
+        const jobs = [];
+
+        for (const file of Array.from(fileList || [])) {
+            const ext = extOf(file.name);
+            const isImageMime = (file.type || '').startsWith('image/');
+            const id = nextId.current++;
+
             if (TEXT_EXTENSIONS.includes(ext)) {
                 if (file.size > MAX_TEXT_SIZE) {
-                    alert(`File too large: ${file.name} (${(file.size / 1024).toFixed(1)}KB). Max 2MB.`);
+                    rejected.push(`${file.name}: too large (${(file.size / 1024).toFixed(0)}KB, max 2MB)`);
                     continue;
                 }
-                readPromises.push(
-                    file.text().then(content => ({ name: file.name, content, type: 'text', mimeType: 'text/plain' }))
-                );
-            } else if (IMAGE_EXTENSIONS.includes(ext)) {
+                additions.push({ id, name: file.name, type: 'text', status: 'processing', mimeType: 'text/plain' });
+                jobs.push(file.text()
+                    .then(content => patch(id, { content, status: 'ready' }))
+                    .catch(err => patch(id, { status: 'error', error: err.message })));
+            } else if (DOCUMENT_EXTENSIONS.includes(ext)) {
+                additions.push({ id, name: file.name, type: 'document', status: 'processing', mimeType: file.type || 'application/octet-stream' });
+                jobs.push(extractDocumentText(file)
+                    .then(({ text, meta }) => {
+                        if (!text.trim()) {
+                            patch(id, { status: 'error', error: 'No text found (scanned image PDF?)' });
+                        } else {
+                            patch(id, { content: text, meta, status: 'ready' });
+                        }
+                    })
+                    .catch(err => patch(id, { status: 'error', error: err.message || 'Extraction failed' })));
+            } else if (IMAGE_EXTENSIONS.includes(ext) || (isImageMime && !ext)) {
                 if (file.size > MAX_IMAGE_SIZE) {
-                    alert(`Image too large: ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)}MB). Max 5MB.`);
+                    rejected.push(`${file.name}: image too large (${(file.size / (1024 * 1024)).toFixed(1)}MB, max 5MB)`);
                     continue;
                 }
-                readPromises.push(new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve({
-                        name: file.name,
-                        dataUrl: reader.result,
-                        mimeType: file.type || 'image/png',
-                        type: 'image'
-                    });
-                    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
-                    reader.readAsDataURL(file);
-                }));
+                additions.push({ id, name: file.name || 'pasted-image.png', type: 'image', status: 'processing', mimeType: file.type || 'image/png' });
+                jobs.push(readAsDataUrl(file)
+                    .then(dataUrl => patch(id, { dataUrl, status: 'ready' }))
+                    .catch(err => patch(id, { status: 'error', error: err.message })));
             } else {
-                alert(`Unsupported file type: ${file.name}. Supported: .txt, .md, .png, .jpg, .jpeg, .gif, .webp, .pdf`);
+                rejected.push(`${file.name}: unsupported type`);
             }
         }
-        if (readPromises.length === 0) return;
-        Promise.all(readPromises).then(results => {
-            setAttachedFiles(prev => [...prev, ...results]);
-        });
+
+        if (additions.length) setAttachedFiles(prev => [...prev, ...additions]);
+        setAttachError(rejected.length
+            ? `${rejected.join('; ')}. Supported: ${supportedList}`
+            : '');
+        return Promise.all(jobs);
     }, []);
 
-    const removeFile = useCallback((index) => {
-        setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+    const removeFile = useCallback((id) => {
+        setAttachedFiles(prev => prev.filter(f => f.id !== id));
     }, []);
 
     const clearFiles = useCallback(() => {
         setAttachedFiles([]);
+        setAttachError('');
     }, []);
 
-    /** Returns <file> XML blocks for text attachments, used in the prompt */
-    const formatForPrompt = useCallback(() => {
-        const textFiles = attachedFiles.filter(f => f.type === 'text');
-        if (!textFiles.length) return '';
-        return textFiles.map(f =>
-            `<file name="${f.name}">\n${f.content}\n</file>`
-        ).join('\n\n');
-    }, [attachedFiles]);
+    const dismissError = useCallback(() => setAttachError(''), []);
 
-    /** Returns base64 image array for the API payload */
+    const readyFiles = attachedFiles.filter(f => f.status === 'ready');
+    const isProcessing = attachedFiles.some(f => f.status === 'processing');
+
+    /** <file> blocks for text + extracted document attachments */
+    const formatForPrompt = useCallback(() => {
+        const textual = readyFiles.filter(f => f.type === 'text' || f.type === 'document');
+        if (!textual.length) return '';
+        return textual.map(f => `<file name="${f.name}">\n${f.content}\n</file>`).join('\n\n');
+    }, [readyFiles]);
+
+    /** base64 image array for the API payload */
     const extractImages = useCallback(() => {
-        return attachedFiles
+        return readyFiles
             .filter(f => f.type === 'image')
-            .map(f => {
-                const base64 = f.dataUrl.split(',')[1];
-                return { mimeType: f.mimeType, data: base64 };
-            });
-    }, [attachedFiles]);
+            .map(f => ({ mimeType: f.mimeType, data: f.dataUrl.split(',')[1] }));
+    }, [readyFiles]);
 
     return {
         attachedFiles,
+        readyFiles,
+        isProcessing,
+        attachError,
+        dismissError,
         addFiles,
         removeFile,
         clearFiles,

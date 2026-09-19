@@ -1,127 +1,173 @@
 'use client';
 
-import { DEFAULT_MODELS } from '../../lib/constants';
+import { useState } from 'react';
+import {
+    DEFAULT_MODELS, PROVIDER_LABELS, DEV_KEY_MODEL,
+    ANTHROPIC_EFFORT_LEVELS, DEFAULT_ANTHROPIC_EFFORT
+} from '../../lib/constants';
+
+const CUSTOM_MODEL = '__custom__';
+
+// Anthropic models from 4.6 onward ignore temperature (the server omits it for them).
+const anthropicIgnoresTemperature = (model) =>
+    /claude-(fable|mythos|opus-5|opus-4-[678]|sonnet-5|sonnet-4-6)/i.test(model || '');
+
+const EFFORT_HINT = {
+    low: 'Fastest, cheapest. Simple questions.',
+    medium: 'Balanced for everyday chat.',
+    high: 'API default. Good reasoning depth.',
+    xhigh: 'Deeper reasoning; slower.',
+    max: 'Maximum reasoning; slowest and most expensive.'
+};
 
 /**
- * LLM settings panel with provider selection, model configuration, and API key management.
+ * LLM settings: developer key shortcut, provider/model, API key, effort, temperature.
  */
 export default function SettingsPanel({ llmSettings, onUpdateLlmSettings }) {
+    const [showKey, setShowKey] = useState(false);
+    const [customModelMode, setCustomModelMode] = useState(false);
+
+    const devKey = !!llmSettings?.useDeveloperKey;
     const provider = llmSettings?.provider || 'google';
     const presets = DEFAULT_MODELS[provider] || [];
     const currentModel = llmSettings?.models?.[provider] || '';
-    const isPresetSelected = presets.includes(currentModel);
+    const isPreset = presets.includes(currentModel);
+    const usingCustomModel = customModelMode || (!!currentModel && !isPreset);
+    const effectiveProvider = devKey ? 'anthropic' : provider;
+    const effectiveModel = devKey ? DEV_KEY_MODEL : (currentModel || presets[0] || '');
+    const effort = llmSettings?.effort || DEFAULT_ANTHROPIC_EFFORT;
+    const apiKey = llmSettings?.apiKeys?.[provider] || '';
+
+    const setModel = (value) => onUpdateLlmSettings({
+        models: { ...(llmSettings?.models || {}), [provider]: value }
+    });
 
     return (
-        <div
-            className={`history-list settings-panel ${llmSettings?.useDeveloperKey ? 'subdued' : ''}`}
-            style={{ padding: '8px' }}
-        >
-            <label style={{ display: 'block', marginBottom: 6 }}>
-                Provider
-                <select
-                    value={provider}
-                    onChange={(e) => onUpdateLlmSettings({ provider: e.target.value })}
-                    style={{ width: '100%', marginTop: 4 }}
-                >
-                    <option value="google">Google</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="mistral">Mistral</option>
-                    <option value="glm">Z.ai</option>
-                </select>
-            </label>
-
-            <label style={{ display: 'block', marginBottom: 6 }}>
+        <div className="history-list settings-panel">
+            <label className="settings-toggle">
                 <input
                     type="checkbox"
                     className="devkey-toggle"
-                    checked={!!llmSettings?.useDeveloperKey}
+                    checked={devKey}
                     onChange={(e) => onUpdateLlmSettings({ useDeveloperKey: e.target.checked })}
-                    style={{ marginRight: 8 }}
                 />
-                Use developer key
+                <span>
+                    <strong>Use developer key</strong>
+                    <small>No setup. Uses the site's Anthropic key with <code>{DEV_KEY_MODEL}</code>.</small>
+                </span>
             </label>
 
-            <label style={{ display: 'block', marginBottom: 6 }}>
-                Preset model
-                <select
-                    value={isPresetSelected ? currentModel : ''}
-                    onChange={(e) => onUpdateLlmSettings({
-                        models: { ...(llmSettings?.models || {}), [provider]: e.target.value }
-                    })}
-                    style={{ width: '100%', marginTop: 4 }}
-                >
-                    <option value="">— Select a preset —</option>
-                    {presets.map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                    ))}
-                </select>
-            </label>
+            <div className={`settings-group ${devKey ? 'subdued' : ''}`}>
+                <div className="settings-group-title">
+                    Your own key
+                    {devKey && <span className="settings-note">(inactive while developer key is on)</span>}
+                </div>
 
-            <label style={{ display: 'block', marginBottom: 6 }}>
-                Temperature
-                <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="2"
-                    className="temperature"
-                    value={typeof llmSettings?.temperature === 'number' ? llmSettings.temperature : 0.7}
-                    onChange={(e) => onUpdateLlmSettings({ temperature: Number(e.target.value) })}
-                    placeholder="0.7"
-                    style={{ width: '100%', marginTop: 4 }}
-                    disabled={!!llmSettings?.useProviderDefaultTemperature}
-                />
-            </label>
+                <label className="settings-field">
+                    <span>Provider</span>
+                    <select
+                        value={provider}
+                        onChange={(e) => { setCustomModelMode(false); onUpdateLlmSettings({ provider: e.target.value }); }}
+                    >
+                        {Object.keys(DEFAULT_MODELS).map(p => (
+                            <option key={p} value={p}>{PROVIDER_LABELS[p] || p}</option>
+                        ))}
+                    </select>
+                </label>
 
-            <label style={{ display: 'block', marginBottom: 6 }}>
-                <input
-                    type="checkbox"
-                    className="temptoggle"
-                    checked={!!llmSettings?.useProviderDefaultTemperature}
-                    onChange={(e) => onUpdateLlmSettings({ useProviderDefaultTemperature: e.target.checked })}
-                    style={{ marginRight: 8 }}
-                />
-                Use provider default temperature
-            </label>
+                <label className="settings-field">
+                    <span>Model</span>
+                    <select
+                        value={usingCustomModel ? CUSTOM_MODEL : (currentModel || '')}
+                        onChange={(e) => {
+                            if (e.target.value === CUSTOM_MODEL) { setCustomModelMode(true); return; }
+                            setCustomModelMode(false);
+                            setModel(e.target.value);
+                        }}
+                    >
+                        <option value="">Default ({presets[0]})</option>
+                        {presets.map((m) => <option key={m} value={m}>{m}</option>)}
+                        <option value={CUSTOM_MODEL}>Custom model ID…</option>
+                    </select>
+                </label>
+                {usingCustomModel && (
+                    <label className="settings-field">
+                        <span>Custom model ID</span>
+                        <input
+                            type="text"
+                            value={currentModel}
+                            onChange={(e) => setModel(e.target.value)}
+                            placeholder={presets[0]}
+                            autoFocus
+                        />
+                    </label>
+                )}
 
-            <label style={{ display: 'block', marginBottom: 6 }}>
-                Model
-                <input
-                    type="text"
-                    value={currentModel}
-                    onChange={(e) => onUpdateLlmSettings({
-                        models: { ...(llmSettings?.models || {}), [provider]: e.target.value }
-                    })}
-                    placeholder={provider === 'google' ? 'gemini-2.5-pro' : 'e.g., gpt-4o, claude-3-5'}
-                    style={{ width: '100%', marginTop: 4 }}
-                />
-            </label>
+                <label className="settings-field">
+                    <span>API key for {PROVIDER_LABELS[provider] || provider}</span>
+                    <span className="key-input-row">
+                        <input
+                            type={showKey ? 'text' : 'password'}
+                            autoComplete="off"
+                            spellCheck={false}
+                            value={apiKey}
+                            onChange={(e) => onUpdateLlmSettings({ apiKey: e.target.value })}
+                            placeholder="Paste key (stored only in this browser)"
+                        />
+                        <button type="button" className="mini-btn" onClick={() => setShowKey(s => !s)} title={showKey ? 'Hide key' : 'Show key'}>
+                            {showKey ? '🙈' : '👁️'}
+                        </button>
+                    </span>
+                </label>
+                {!devKey && !apiKey && (
+                    <p className="settings-warning">Add a {PROVIDER_LABELS[provider] || provider} key, or switch on the developer key above.</p>
+                )}
+            </div>
 
-            <label style={{ display: 'block', marginBottom: 6 }}>
-                API Key for {provider.toUpperCase()}
-                <input
-                    type="text"
-                    autoComplete="off"
-                    value={llmSettings?.apiKeys?.[provider] || ''}
-                    onChange={(e) => onUpdateLlmSettings({ apiKey: e.target.value })}
-                    placeholder={`Enter your ${provider} API key (kept local)`}
-                    style={{
-                        width: '100%',
-                        marginTop: 4,
-                        WebkitTextSecurity: 'disc',
-                        textSecurity: 'disc'
-                    }}
-                />
-            </label>
+            <div className="settings-group">
+                <div className="settings-group-title">Generation</div>
 
-            {!llmSettings?.apiKeys?.[provider] && (
-                <p style={{ fontSize: 12, color: '#b94a48' }}>
-                    API key required for {provider}. Add your key to use this provider.
-                </p>
-            )}
-            <p style={{ fontSize: 12, color: '#888' }}>
-                Your key stays in your browser storage and is sent only with requests.
+                {effectiveProvider === 'anthropic' && (
+                    <label className="settings-field">
+                        <span>Reasoning effort</span>
+                        <select value={effort} onChange={(e) => onUpdateLlmSettings({ effort: e.target.value })}>
+                            {ANTHROPIC_EFFORT_LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                        <small>{EFFORT_HINT[effort]}</small>
+                    </label>
+                )}
+
+                <label className="settings-toggle compact">
+                    <input
+                        type="checkbox"
+                        className="temptoggle"
+                        checked={!!llmSettings?.useProviderDefaultTemperature}
+                        onChange={(e) => onUpdateLlmSettings({ useProviderDefaultTemperature: e.target.checked })}
+                    />
+                    <span>Use provider default temperature</span>
+                </label>
+                {!llmSettings?.useProviderDefaultTemperature && (
+                    <label className="settings-field">
+                        <span>Temperature</span>
+                        <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max={effectiveProvider === 'anthropic' || effectiveProvider === 'mistral' ? 1 : 2}
+                            className="temperature"
+                            value={typeof llmSettings?.temperature === 'number' ? llmSettings.temperature : 0.7}
+                            onChange={(e) => onUpdateLlmSettings({ temperature: Number(e.target.value) })}
+                        />
+                        {effectiveProvider === 'anthropic' && anthropicIgnoresTemperature(effectiveModel) && (
+                            <small>{effectiveModel} does not accept temperature; it is omitted.</small>
+                        )}
+                    </label>
+                )}
+            </div>
+
+            <p className="settings-footnote">
+                Active: <strong>{PROVIDER_LABELS[effectiveProvider] || effectiveProvider}</strong> · <code>{effectiveModel}</code>
+                {devKey ? ' (developer key)' : ' (your key)'}
             </p>
         </div>
     );

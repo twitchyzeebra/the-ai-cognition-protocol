@@ -211,12 +211,95 @@ body {
     cursor: not-allowed;
 }
 
-/* Drag-over visual feedback */
-#chat-input.drag-over {
+/* Drag-over visual feedback (whole chat column is a drop zone) */
+#chat-column.drag-over {
     outline: 2px dashed var(--accent-color);
-    outline-offset: -2px;
+    outline-offset: -6px;
     border-radius: 8px;
 }
+.drop-hint {
+    text-align: center;
+    padding: 8px;
+    margin-bottom: 6px;
+    border: 1px dashed var(--accent-color);
+    border-radius: 8px;
+    color: #cfe8ff;
+    font-size: 14px;
+    pointer-events: none;
+}
+
+/* Attachment chip states */
+.file-chip.processing { opacity: 0.75; }
+.file-chip.error { background: #7a2a2a; }
+.file-chip-icon { font-size: 13px; }
+.file-chip-status {
+    font-size: 11px;
+    opacity: 0.85;
+    white-space: nowrap;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Inline banners above the input */
+.chat-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+.chat-banner.info { background: rgba(0, 122, 204, 0.18); border: 1px solid rgba(0, 122, 204, 0.5); }
+.chat-banner.warn { background: rgba(255, 193, 7, 0.12); border: 1px solid rgba(255, 193, 7, 0.5); }
+.banner-close {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    opacity: 0.8;
+}
+.banner-close:hover { opacity: 1; }
+
+/* Column title + target model label */
+.column-title { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.target-label {
+    font-size: 12px;
+    color: #bdbdbd;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Empty chat state */
+.chat-empty {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #9a9a9a;
+    text-align: center;
+}
+.chat-empty p { margin: 4px 0; }
+.chat-empty-sub { font-size: 13px; opacity: 0.8; }
+
+/* Model label under assistant replies */
+.msg-meta {
+    font-size: 11px;
+    color: #8a8a8a;
+    margin: 2px 12px 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+#chat-input button:disabled { opacity: 0.55; cursor: not-allowed; }
+#chat-input .stop-btn { background: #8a1717; }
 
 #chat-input {
     display: flex;
@@ -443,6 +526,21 @@ body {
     max-width: 500px;
 }
 
+.landing-status {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 18px;
+    padding: 10px 16px;
+    margin: 4px 0 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--container-bg);
+    font-size: 0.95rem;
+}
+.landing-status-hint { color: #9a9a9a; font-size: 0.85rem; width: 100%; text-align: center; }
+.landing-option-btn.primary { background-color: var(--accent-color); border-color: var(--accent-color); }
+
 .landing-option-btn {
     padding: 15px 20px;
     background-color: var(--input-bg);
@@ -582,6 +680,33 @@ body {
     font-size: 0.9rem;
     line-height: 1.4;
 }
+
+.editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #aaa;
+}
+.editor-name-input {
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--input-bg);
+    color: var(--text-color);
+    font-size: 15px;
+}
+.editor-name-input:focus { outline: none; border-color: var(--accent-color); }
+.editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.editor-toolbar .sidebar-btn { padding: 6px 10px; font-size: 13px; }
+.sidebar-btn.danger { background: #6b1010; border-color: #8a1717; }
+.sidebar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .custom-prompt-textarea {
     width: 100%;

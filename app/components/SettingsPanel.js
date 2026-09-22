@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
     DEFAULT_MODELS, PROVIDER_LABELS, DEV_KEY_MODEL,
-    ANTHROPIC_EFFORT_LEVELS, DEFAULT_ANTHROPIC_EFFORT
+    EFFORT_LEVELS, DEFAULT_EFFORT
 } from '../../lib/constants';
 
 const CUSTOM_MODEL = '__custom__';
@@ -12,12 +12,24 @@ const CUSTOM_MODEL = '__custom__';
 const anthropicIgnoresTemperature = (model) =>
     /claude-(fable|mythos|opus-5|opus-4-[678]|sonnet-5|sonnet-4-6)/i.test(model || '');
 
+// Mirrors supportsEffort in lib/llm-providers/openai.js (kept local to avoid bundling the SDK client-side).
+const openaiSupportsEffort = (model) => /^(gpt-5|o[1-9])/i.test(model || '');
+
 const EFFORT_HINT = {
-    low: 'Fastest, cheapest. Simple questions.',
-    medium: 'Balanced for everyday chat.',
-    high: 'API default. Good reasoning depth.',
-    xhigh: 'Deeper reasoning; slower.',
-    max: 'Maximum reasoning; slowest and most expensive.'
+    anthropic: {
+        low: 'Fastest, cheapest. Simple questions.',
+        medium: 'Balanced for everyday chat.',
+        high: 'API default. Good reasoning depth.',
+        xhigh: 'Deeper reasoning; slower.',
+        max: 'Maximum reasoning; slowest and most expensive.'
+    },
+    openai: {
+        none: 'No reasoning tokens. Fastest. gpt-5.1 or newer only.',
+        low: 'Light reasoning. Quick answers.',
+        medium: 'Balanced for everyday chat.',
+        high: 'Deeper reasoning; slower.',
+        xhigh: 'Maximum reasoning; slowest. gpt-5.2 or newer only.'
+    }
 };
 
 /**
@@ -35,11 +47,15 @@ export default function SettingsPanel({ llmSettings, onUpdateLlmSettings }) {
     const usingCustomModel = customModelMode || (!!currentModel && !isPreset);
     const effectiveProvider = devKey ? 'anthropic' : provider;
     const effectiveModel = devKey ? DEV_KEY_MODEL : (currentModel || presets[0] || '');
-    const effort = llmSettings?.effort || DEFAULT_ANTHROPIC_EFFORT;
+    const effortLevels = EFFORT_LEVELS[effectiveProvider];
+    const effort = llmSettings?.efforts?.[effectiveProvider] || DEFAULT_EFFORT[effectiveProvider];
     const apiKey = llmSettings?.apiKeys?.[provider] || '';
 
     const setModel = (value) => onUpdateLlmSettings({
         models: { ...(llmSettings?.models || {}), [provider]: value }
+    });
+    const setEffort = (value) => onUpdateLlmSettings({
+        efforts: { ...DEFAULT_EFFORT, ...(llmSettings?.efforts || {}), [effectiveProvider]: value }
     });
 
     return (
@@ -127,13 +143,16 @@ export default function SettingsPanel({ llmSettings, onUpdateLlmSettings }) {
             <div className="settings-group">
                 <div className="settings-group-title">Generation</div>
 
-                {effectiveProvider === 'anthropic' && (
+                {effortLevels && (
                     <label className="settings-field">
                         <span>Reasoning effort</span>
-                        <select value={effort} onChange={(e) => onUpdateLlmSettings({ effort: e.target.value })}>
-                            {ANTHROPIC_EFFORT_LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+                        <select value={effort} onChange={(e) => setEffort(e.target.value)}>
+                            {effortLevels.map(l => <option key={l} value={l}>{l}</option>)}
                         </select>
-                        <small>{EFFORT_HINT[effort]}</small>
+                        <small>{EFFORT_HINT[effectiveProvider]?.[effort]}</small>
+                        {effectiveProvider === 'openai' && !openaiSupportsEffort(effectiveModel) && (
+                            <small>{effectiveModel} is not a reasoning model; effort is omitted.</small>
+                        )}
                     </label>
                 )}
 

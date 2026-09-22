@@ -10,7 +10,7 @@ import CustomPromptEditor from './components/CustomPromptEditor';
 import { builtinLabel } from './components/SystemPromptsSection';
 import useChat, { resolveTarget } from './hooks/useChat';
 import { useCustomPrompts, customPromptKey, isCustomPromptKey } from './hooks/useCustomPrompts';
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_ANTHROPIC_EFFORT, PROVIDER_LABELS } from '../lib/constants';
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_EFFORT, EFFORT_LEVELS, PROVIDER_LABELS } from '../lib/constants';
 
 const PROVIDERS = ['google', 'openai', 'anthropic', 'mistral', 'glm'];
 const emptyPerProvider = () => Object.fromEntries(PROVIDERS.map(p => [p, '']));
@@ -21,9 +21,21 @@ const defaultLlmSettings = () => ({
     temperature: 0.7,
     useProviderDefaultTemperature: true,
     useDeveloperKey: true,
-    effort: DEFAULT_ANTHROPIC_EFFORT,
+    efforts: { ...DEFAULT_EFFORT },
     apiKeys: emptyPerProvider()
 });
+
+// Per-provider effort from saved state. Older saves stored a single `effort` string (Anthropic only).
+const restoreEfforts = (saved) => {
+    const efforts = { ...DEFAULT_EFFORT };
+    const src = saved.efforts && typeof saved.efforts === 'object'
+        ? saved.efforts
+        : (typeof saved.effort === 'string' ? { anthropic: saved.effort } : {});
+    for (const p of Object.keys(EFFORT_LEVELS)) {
+        if (EFFORT_LEVELS[p].includes(src[p])) efforts[p] = src[p];
+    }
+    return efforts;
+};
 
 export default function Home() {
     // ── App-level state (resources, settings, UI panels) ───
@@ -88,7 +100,7 @@ export default function Home() {
                             temperature: typeof saved.temperature === 'number' ? saved.temperature : 0.7,
                             useProviderDefaultTemperature: saved.useProviderDefaultTemperature !== false,
                             useDeveloperKey: saved.useDeveloperKey !== false,
-                            effort: saved.effort || DEFAULT_ANTHROPIC_EFFORT,
+                            efforts: restoreEfforts(saved),
                             apiKeys: { ...defaults.apiKeys, ...(saved.apiKeys || {}) }
                         });
                     } catch (error) {

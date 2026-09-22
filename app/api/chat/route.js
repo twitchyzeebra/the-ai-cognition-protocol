@@ -8,7 +8,7 @@ import * as MistralAdapter from '../../../lib/llm-providers/mistral';
 import * as GLMAdapter from '../../../lib/llm-providers/glm';
 import {
     DEFAULT_MODELS, VALIDATION_LIMITS, CUSTOM_PROMPT_PREFIX,
-    DEV_KEY_PROVIDER, DEV_KEY_MODEL, ANTHROPIC_EFFORT_LEVELS
+    DEV_KEY_PROVIDER, DEV_KEY_MODEL, EFFORT_LEVELS
 } from '../../../lib/constants';
 
 // The 'edge' runtime has been removed to allow Node.js APIs like fs and crypto.
@@ -125,7 +125,7 @@ export async function POST(req) {
                 temperatureUsed = Math.min(2, Math.max(0, tempNum));
             }
         }
-        const effortUsed = p === 'anthropic' && ANTHROPIC_EFFORT_LEVELS.includes(effort) ? effort : undefined;
+        const effortUsed = (EFFORT_LEVELS[p] || []).includes(effort) ? effort : undefined;
 
         // Validate inputs
         if (!prompt?.trim()) return jsonError('Invalid prompt');

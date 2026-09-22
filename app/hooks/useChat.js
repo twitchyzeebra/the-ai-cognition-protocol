@@ -74,7 +74,8 @@ function buildPayload({ prompt, history, selectedSystemPrompt, customPrompt, llm
     if (!settings.useProviderDefaultTemperature && typeof settings.temperature === 'number') {
         payload.temperature = settings.temperature;
     }
-    if (target.provider === 'anthropic' && settings.effort) payload.effort = settings.effort;
+    const effort = settings.efforts?.[target.provider];
+    if (effort) payload.effort = effort;
     if (isCustomPrompt(selectedSystemPrompt)) payload.customPrompt = customPrompt || '';
     if (target.devKey) payload.useDeveloperKey = true;
     return payload;

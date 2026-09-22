@@ -29,6 +29,11 @@ const EFFORT_HINT = {
         medium: 'Balanced for everyday chat.',
         high: 'Deeper reasoning; slower.',
         xhigh: 'Maximum reasoning; slowest. gpt-5.2 or newer only.'
+    },
+    glm: {
+        low: 'Light thinking. Quick answers.',
+        high: 'Deeper thinking; slower.',
+        max: 'API default. Maximum thinking; slowest.'
     }
 };
 

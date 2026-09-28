@@ -46,11 +46,6 @@ export default function LandingPage({ promptLabel, targetLabel, learningResource
                         📚 Learning Resources
                     </button>
                 </Link>
-                <Link href="/canvas">
-                    <button className="landing-option-btn">
-                        ⬜ Open Canvas
-                    </button>
-                </Link>
             </div>
 
             <div className="landing-options">

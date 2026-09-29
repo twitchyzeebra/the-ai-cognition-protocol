@@ -1,6 +1,7 @@
 import Link from 'next/link';
+import { WEBSITE_GUIDE_SLUG } from '../../lib/constants';
 
-export default function LandingPage({ promptLabel, targetLabel, learningResources, onSelectResource, onStartChat, onNewChat }) {
+export default function LandingPage({ promptLabel, targetLabel, onSelectResource, onStartChat, onNewChat }) {
     return (
         <div className="landing-page-centered">
             <h1>Welcome to The AI Cognition Protocol</h1>
@@ -22,29 +23,13 @@ export default function LandingPage({ promptLabel, targetLabel, learningResource
             </div>
 
             <div className="panel-controls">
-                <button
-                    onClick={() => onStartChat("Tell me about yourself and how to use you.")}
-                    className="landing-option-btn primary"
-                >
+                <button onClick={() => onStartChat('Tell me about yourself and how to use you.')} className="landing-option-btn primary">
                     💬 Start talking with the AI
                 </button>
-                <button onClick={onNewChat} className="landing-option-btn">
-                    ✏️ New blank chat
-                </button>
-                <button
-                    onClick={() => {
-                        const lower = (s) => (s || '').toLowerCase();
-                        const res = learningResources.find(r => lower(r.slug).includes('website guide') || lower(r.title).includes('website guide'));
-                        onSelectResource(res?.slug || 'Website Guide');
-                    }}
-                    className="landing-option-btn"
-                >
-                    📖 Website Guide
-                </button>
+                <button onClick={onNewChat} className="landing-option-btn">✏️ New blank chat</button>
+                <button onClick={() => onSelectResource(WEBSITE_GUIDE_SLUG)} className="landing-option-btn">📖 Website Guide</button>
                 <Link href="/resources">
-                    <button className="landing-option-btn">
-                        📚 Learning Resources
-                    </button>
+                    <button className="landing-option-btn">📚 Learning Resources</button>
                 </Link>
             </div>
 

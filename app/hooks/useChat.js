@@ -1,104 +1,97 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import chatDB from '../../lib/database';
+import { readSSE } from '../../lib/sse';
 import { convertMarkdownToPdf } from '../utils/markdownToPdf';
-import { useApi } from './useApi';
+import { downloadText, safeFilename } from '../utils/helpers';
 import { useFileAttachments } from './useFileAttachments';
-import { CUSTOM_PROMPT_PREFIX, DEV_KEY_PROVIDER, DEV_KEY_MODEL } from '../../lib/constants';
+import { DEV_KEY_PROVIDER, DEV_KEY_MODEL, isCustomPromptSelection } from '../../lib/constants';
 
-// ── Constants ─────────────────────────────────────────────
 const TITLE_MAX = 50;
 const SCROLL_THRESHOLD = 30;
-const CHARS_PER_TOKEN = 4;
 const CANCEL_TEXT = 'Request cancelled by user';
 const CANCEL_SUFFIX = '\n\n_[cancelled]_';
+const EMPTY_USAGE = { input: 0, output: 0, total: 0 };
 
-// ── Pure helpers ──────────────────────────────────────────
-const estimateTokens = (s) => {
-    const len = (s || '').length;
-    return len ? Math.max(1, Math.ceil(len / CHARS_PER_TOKEN)) : 0;
-};
+const estimateTokens = (s) => (s ? Math.max(1, Math.ceil(s.length / 4)) : 0);
+const usageKey = (chatId) => `usageTotals:${chatId}`;
 
-const makeChatTitle = (text) => {
-    const t = text || '';
-    return t.substring(0, TITLE_MAX) + (t.length > TITLE_MAX ? '...' : '');
-};
+function readUsage(chatId) {
+    try {
+        const saved = JSON.parse(localStorage.getItem(usageKey(chatId)));
+        return { input: Number(saved?.input) || 0, output: Number(saved?.output) || 0, total: Number(saved?.total) || 0 };
+    } catch {
+        return EMPTY_USAGE;
+    }
+}
 
-const sanitizeFilename = (name) =>
-    (name || 'chat').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim().slice(0, 120) || 'chat';
-
-const isCustomPrompt = (name) =>
-    name === 'Custom Prompt' || (typeof name === 'string' && name.startsWith(CUSTOM_PROMPT_PREFIX));
-
-const buildDbMeta = (userMessage, hasAttachments) => hasAttachments ? {
-    displayContent: userMessage.displayContent,
-    files: userMessage.files,
-    ...(userMessage.images && { images: userMessage.images })
-} : undefined;
-
+/** Parses a chat exported by downloadChat: optional '# Title', then '## User' / '## Assistant' sections. */
 function parseMarkdownChat(mdText) {
     const text = (mdText || '').replace(/\r\n/g, '\n');
     const titleMatch = text.match(/^# (.+)\n?/);
-    const title = titleMatch?.[1].trim() || 'Imported Chat';
     const body = titleMatch ? text.slice(titleMatch[0].length) : text;
-
     // Split on role headers: [preamble, role1, body1, role2, body2, ...]
     const parts = body.split(/\n?##\s*(User|Assistant)\s*\n/i);
     const messages = [];
     for (let i = 1; i < parts.length; i += 2) {
-        const role = parts[i].toLowerCase() === 'user' ? 'user' : 'assistant';
         const content = (parts[i + 1] || '').trim();
-        if (content) messages.push({ role, content });
+        if (content) messages.push({ role: parts[i].toLowerCase() === 'user' ? 'user' : 'assistant', content });
     }
-    return { title, messages };
+    return { title: titleMatch?.[1].trim() || 'Imported Chat', messages };
 }
 
 /** Provider/model the next request will actually use (dev key overrides both). */
-export function resolveTarget(llmSettings) {
-    const settings = llmSettings || {};
+export function resolveTarget(settings = {}) {
     if (settings.useDeveloperKey) return { provider: DEV_KEY_PROVIDER, model: DEV_KEY_MODEL, devKey: true };
     const provider = settings.provider || 'google';
-    return { provider, model: (settings.models || {})[provider] || '', devKey: false };
+    return { provider, model: settings.models?.[provider] || '', devKey: false };
 }
 
-function buildPayload({ prompt, history, selectedSystemPrompt, customPrompt, llmSettings }) {
-    const settings = llmSettings || {};
-    const target = resolveTarget(settings);
+function buildPayload({ prompt, history, selectedSystemPrompt, customPrompt, llmSettings = {} }) {
+    const target = resolveTarget(llmSettings);
     const payload = {
         prompt,
         history: history.map(m => ({ role: m.role, content: m.content })),
         systemPrompt: selectedSystemPrompt,
         provider: target.provider,
-        apiKey: target.devKey ? '' : ((settings.apiKeys || {})[target.provider] || ''),
+        apiKey: target.devKey ? '' : llmSettings.apiKeys?.[target.provider] || '',
         model: target.model
     };
-    if (!settings.useProviderDefaultTemperature && typeof settings.temperature === 'number') {
-        payload.temperature = settings.temperature;
-    }
-    const effort = settings.efforts?.[target.provider];
-    if (effort) payload.effort = effort;
-    if (isCustomPrompt(selectedSystemPrompt)) payload.customPrompt = customPrompt || '';
+    if (!llmSettings.useProviderDefaultTemperature && typeof llmSettings.temperature === 'number') payload.temperature = llmSettings.temperature;
+    if (llmSettings.efforts?.[target.provider]) payload.effort = llmSettings.efforts[target.provider];
+    if (isCustomPromptSelection(selectedSystemPrompt)) payload.customPrompt = customPrompt || '';
     if (target.devKey) payload.useDeveloperKey = true;
     return payload;
 }
 
-// Replace last assistant bubble's content; append if none or (with mustBeEmpty) if non-empty.
-const writeAssistant = (setMessages, text, { mustBeEmpty = false, extra } = {}) => {
-    setMessages(prev => {
-        const last = prev[prev.length - 1];
-        const canReplace = last?.role === 'assistant' && (!mustBeEmpty || !last.content);
-        if (canReplace) {
-            const updated = [...prev];
-            updated[updated.length - 1] = { ...last, content: text, ...(extra || {}) };
-            return updated;
-        }
-        return [...prev, { role: 'assistant', content: text, ...(extra || {}) }];
+/** POSTs to /api/chat and yields its SSE events; HTTP and server-sent errors are thrown. */
+async function* streamChat(payload, signal) {
+    const res = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal
     });
-};
+    if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data
+            ? data.error || data.message || `API request failed with status ${res.status}`
+            : `API request failed: ${res.status} ${res.statusText}`);
+    }
+    if (!res.body) throw new Error('Response body is null');
+    for await (const data of readSSE(res.body)) {
+        let event;
+        try { event = JSON.parse(data); } catch { continue; }
+        if (event?.type === 'error') throw new Error(event.message || 'Unknown streaming error');
+        if (event?.type) yield event;
+    }
+}
+
+// Replace the last assistant bubble's content; append a new one if there is none (or, with mustBeEmpty, if it has text).
+const writeAssistant = (setMessages, text, { mustBeEmpty = false, extra } = {}) => setMessages(prev => {
+    const last = prev[prev.length - 1];
+    if (last?.role === 'assistant' && (!mustBeEmpty || !last.content)) return [...prev.slice(0, -1), { ...last, content: text, ...extra }];
+    return [...prev, { role: 'assistant', content: text, ...extra }];
+});
 
 /**
- * useChat — central chat state and operations.
- * Delegates to: useApi (streaming), useFileAttachments (files).
- *
+ * useChat — chat list, active chat messages, streaming, usage tracking, import/export, attachments.
  * @param {{ selectedSystemPrompt: string, customPrompt: string, llmSettings: object }} props
  *   customPrompt = text of the currently selected custom prompt (ignored for built-ins)
  */
@@ -107,26 +100,29 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [chatHistory, setChatHistory] = useState([]);
-    const [activeChatId, setActiveChatId] = useState(null);
+    const [activeChatId, setActiveChatIdState] = useState(null);
     const [messagesLoaded, setMessagesLoaded] = useState(true);
     const [usageLast, setUsageLast] = useState(null);
-    const [usageTotals, setUsageTotals] = useState({ input: 0, output: 0, total: 0 });
+    const [usageTotals, setUsageTotals] = useState(EMPTY_USAGE);
     const [hasRetry, setHasRetry] = useState(false);
     const [notice, setNotice] = useState('');
 
-    const api = useApi();
     const files = useFileAttachments();
-
     const chatLogRef = useRef(null);
     const lastUserPromptRef = useRef('');
-    const abortedRef = useRef(false);
-    // Chats created locally this session — skip the DB reload for these since
-    // their in-memory state is authoritative (user msg + streaming assistant).
+    const abortRef = useRef(null);
+    // Mirrors activeChatId synchronously, so a stream only writes into the chat it belongs to.
+    const activeIdRef = useRef(null);
+    // Chat created by sendMessage: its in-memory messages (user turn + streaming reply) are authoritative.
     const skipLoadForIdRef = useRef(null);
 
-    // ── Effects ────────────────────────────────────────────
+    const setActiveChatId = useCallback((id) => {
+        activeIdRef.current = id;
+        setActiveChatIdState(id);
+    }, []);
 
     useEffect(() => {
+        setUsageTotals(activeChatId ? readUsage(activeChatId) : EMPTY_USAGE);
         if (!activeChatId) { setMessages([]); setMessagesLoaded(true); return; }
         if (skipLoadForIdRef.current === activeChatId) {
             skipLoadForIdRef.current = null;
@@ -142,39 +138,31 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
         return () => { cancelled = true; };
     }, [activeChatId]);
 
-    useEffect(() => {
-        if (!activeChatId) { setUsageTotals({ input: 0, output: 0, total: 0 }); return; }
-        try {
-            const raw = localStorage.getItem(`usageTotals:${activeChatId}`);
-            const parsed = raw ? JSON.parse(raw) : null;
-            setUsageTotals({
-                input: Number(parsed?.input) || 0,
-                output: Number(parsed?.output) || 0,
-                total: Number(parsed?.total) || 0
-            });
-        } catch (err) {
-            console.warn('Failed to load usage totals:', err);
-        }
-    }, [activeChatId]);
-
-    useEffect(() => {
-        if (!activeChatId) return;
-        try {
-            localStorage.setItem(`usageTotals:${activeChatId}`, JSON.stringify(usageTotals));
-        } catch (err) {
-            console.warn('Failed to save usage totals:', err);
-        }
-    }, [activeChatId, usageTotals]);
-
+    // Keep following the conversation unless the user scrolled up.
     useEffect(() => {
         const el = chatLogRef.current;
-        if (!el) return;
-        if (el.scrollHeight - el.clientHeight <= el.scrollTop + SCROLL_THRESHOLD) {
+        if (el && el.scrollHeight - el.clientHeight <= el.scrollTop + SCROLL_THRESHOLD) {
             requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
         }
     }, [messages]);
 
-    // ── Operations ─────────────────────────────────────────
+    // Adds to the chat's persisted totals; the display updates only if that chat is still open.
+    const recordUsage = useCallback((chatId, { inputTokens, outputTokens, totalTokens }) => {
+        const last = { inputTokens: Number(inputTokens) || 0, outputTokens: Number(outputTokens) || 0, totalTokens: Number(totalTokens) || 0 };
+        setUsageLast(last);
+        const prev = readUsage(chatId);
+        const next = { input: prev.input + last.inputTokens, output: prev.output + last.outputTokens, total: prev.total + last.totalTokens };
+        try { localStorage.setItem(usageKey(chatId), JSON.stringify(next)); } catch (err) { console.warn('Failed to save usage totals:', err); }
+        if (activeIdRef.current === chatId) setUsageTotals(next);
+    }, []);
+
+    const createChat = useCallback(async (title, initialMessages) => {
+        const { provider, model } = resolveTarget(llmSettings);
+        const id = await chatDB.createChat(title, selectedSystemPrompt, provider, model, initialMessages);
+        const now = new Date();
+        setChatHistory(prev => [...prev, { id, title, created: now, updated: now, systemPrompt: selectedSystemPrompt, provider, model }]);
+        return id;
+    }, [selectedSystemPrompt, llmSettings]);
 
     const loadChatHistory = useCallback(async () => {
         const chats = await chatDB.getAllChats();
@@ -187,239 +175,159 @@ export default function useChat({ selectedSystemPrompt, customPrompt, llmSetting
         setMessages([]);
         setInput('');
         setNotice('');
-    }, []);
+    }, [setActiveChatId]);
 
-    const stopGeneration = useCallback(() => {
-        abortedRef.current = true;
-        api.abort();
-    }, [api]);
-
-    const resend = useCallback(() => {
-        setInput(lastUserPromptRef.current || '');
-    }, []);
+    const stopGeneration = useCallback(() => abortRef.current?.abort(), []);
+    const resend = useCallback(() => setInput(lastUserPromptRef.current || ''), []);
 
     const deleteChat = useCallback(async (id) => {
         try {
             await chatDB.deleteChat(id);
             setChatHistory(prev => prev.filter(c => c.id !== id));
-            if (id === activeChatId) { setActiveChatId(null); setMessages([]); }
-            localStorage.removeItem(`usageTotals:${id}`);
+            if (id === activeIdRef.current) { setActiveChatId(null); setMessages([]); }
+            localStorage.removeItem(usageKey(id));
         } catch (err) {
             console.error('Failed to delete chat:', err);
         }
-    }, [activeChatId]);
+    }, [setActiveChatId]);
 
-    const renameChat = useCallback(async (id, newTitle) => {
+    const renameChat = useCallback(async (id, title) => {
         try {
-            await chatDB.updateChatTitle(id, newTitle);
-            setChatHistory(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
+            await chatDB.updateChatTitle(id, title);
+            setChatHistory(prev => prev.map(c => (c.id === id ? { ...c, title } : c)));
         } catch (err) {
             console.error('Failed to rename chat:', err);
         }
     }, []);
 
     const downloadChat = useCallback(async (format) => {
-        if (format !== 'md' && format !== 'pdf') return;
         const chat = chatHistory.find(c => c.id === activeChatId);
         if (!chat) { alert('No active chat to export.'); return; }
-
-        const header = format === 'md' ? [`# ${chat.title}`, ''] : [];
-        const body = messages.flatMap(m => [
-            `## ${m.role === 'assistant' ? 'Assistant' : 'User'}`, '', m.content || '', ''
-        ]);
-        const md = [...header, ...body].join('\n');
-        const safeName = sanitizeFilename(chat.title);
-
-        if (format === 'pdf') {
-            await convertMarkdownToPdf(md, `${safeName}.pdf`);
-            return;
+        const body = messages.flatMap(m => [`## ${m.role === 'assistant' ? 'Assistant' : 'User'}`, '', m.content || '', '']).join('\n');
+        const name = safeFilename(chat.title, 'chat');
+        try {
+            if (format === 'pdf') await convertMarkdownToPdf(body, `${name}.pdf`);
+            else downloadText(`# ${chat.title}\n\n${body}`, `${name}.md`, 'text/markdown');
+        } catch (err) {
+            console.error('Failed to export chat:', err);
+            alert(`Failed to export chat: ${err.message}`);
         }
-        const blob = new Blob([md], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${safeName}.md`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
     }, [activeChatId, chatHistory, messages]);
 
-    const importChat = useCallback(async ({ title, messages: chatMessages }) => {
-        const target = resolveTarget(llmSettings);
-        const newId = await chatDB.createChat(title, selectedSystemPrompt, target.provider, target.model);
-        for (const m of chatMessages) {
-            await chatDB.addMessage(newId, m.role === 'assistant' ? 'assistant' : 'user', m.content);
-        }
-        const now = new Date();
-        setChatHistory(prev => [...prev, {
-            id: newId, title, created: now, updated: now,
-            systemPrompt: selectedSystemPrompt, provider: target.provider, model: target.model
-        }]);
-        setActiveChatId(newId);
-        return newId;
-    }, [selectedSystemPrompt, llmSettings]);
+    /** Imports a chat exported by downloadChat and opens it. Returns false if it has no messages. */
+    const importMarkdown = useCallback(async (text) => {
+        const { title, messages: imported } = parseMarkdownChat(text);
+        if (!imported.length) return false;
+        setActiveChatId(await createChat(title, imported));
+        return true;
+    }, [createChat, setActiveChatId]);
 
     const sendMessage = useCallback(async () => {
-        const hasReadyFiles = files.readyFiles.length > 0;
-        if (!input.trim() && !hasReadyFiles) return;
-        if (files.isProcessing) {
-            setNotice('Still reading attachments. Wait a moment and send again.');
-            return;
-        }
-        if (activeChatId && !messagesLoaded) {
-            alert('Loading chat messages, please try again in a moment.');
-            return;
-        }
+        const ready = files.readyFiles;
+        if (!input.trim() && !ready.length) return;
+        if (files.isProcessing) { setNotice('Still reading attachments. Wait a moment and send again.'); return; }
+        if (activeChatId && !messagesLoaded) { alert('Loading chat messages, please try again in a moment.'); return; }
 
         setHasRetry(false);
         setNotice('');
-        abortedRef.current = false;
 
-        // ── 1. Build user message ────────────────────────────
-        const attached = files.readyFiles;
-        const hasText = attached.some(f => f.type === 'text' || f.type === 'document');
-        const hasImages = attached.some(f => f.type === 'image');
-        const hasAttachments = attached.length > 0;
+        // ── Build the user turn: text/document attachments are inlined as <file> blocks.
+        const textFiles = ready.filter(f => f.type !== 'image');
+        const imageFiles = ready.filter(f => f.type === 'image');
+        const typed = input.trim() ? input : ready.length ? 'See the attached file(s).' : input;
+        const prompt = textFiles.length ? `${textFiles.map(f => `<file name="${f.name}">\n${f.content}\n</file>`).join('\n\n')}\n\n${typed}` : typed;
+        const meta = ready.length ? {
+            displayContent: typed,
+            files: ready.map(f => ({ name: f.name, type: f.type })),
+            ...(imageFiles.length && { images: imageFiles.map(f => ({ name: f.name, dataUrl: f.dataUrl })) })
+        } : undefined;
 
-        const typed = input.trim() ? input : (hasAttachments ? 'See the attached file(s).' : input);
-        const fullPrompt = hasText ? files.formatForPrompt() + '\n\n' + typed : typed;
-        const userMessage = { role: 'user', content: fullPrompt };
-        if (hasAttachments) {
-            userMessage.displayContent = typed;
-            userMessage.files = attached.map(f => ({ name: f.name, type: f.type }));
-        }
-        if (hasImages) {
-            userMessage.images = attached
-                .filter(f => f.type === 'image')
-                .map(f => ({ name: f.name, dataUrl: f.dataUrl }));
-        }
-
-        // ── 2. Update UI state ──────────────────────────────
-        const priorMessages = messages;
+        const prior = messages;
         lastUserPromptRef.current = typed;
-        setMessages([...priorMessages, userMessage]);
+        setMessages([...prior, { role: 'user', content: prompt, ...meta }]);
         setInput('');
-        const imagePayload = hasImages ? files.extractImages() : undefined;
         files.clearFiles();
         setIsLoading(true);
+        const controller = new AbortController();
+        abortRef.current = controller;
 
         let chatId = activeChatId;
-        const dbMeta = buildDbMeta(userMessage, hasAttachments);
+        const write = (text, opts) => { if (activeIdRef.current === chatId) writeAssistant(setMessages, text, opts); };
+        const persist = (text, extra) => chatDB.addMessage(chatId, 'assistant', text, extra)
+            .catch(err => console.warn('DB write failed:', err?.message));
 
         try {
-            // ── 3. Create chat if needed; persist user message ─
             if (!chatId) {
-                const title = makeChatTitle(typed);
-                const target = resolveTarget(llmSettings);
-                chatId = await chatDB.createChat(title, selectedSystemPrompt, target.provider, target.model);
-                // Mark this chat as locally created BEFORE setActiveChatId so the
-                // load effect skips the DB reload race (would blank the user msg).
-                setActiveChatId(chatId);
-                queueMicrotask(() => { skipLoadForIdRef.current = chatId; });
-                const now = new Date();
-                setChatHistory(prev => [...prev, {
-                    id: chatId, title, created: now, updated: now,
-                    systemPrompt: selectedSystemPrompt, provider: target.provider, model: target.model
-                }]);
+                chatId = await createChat(typed.substring(0, TITLE_MAX) + (typed.length > TITLE_MAX ? '...' : ''));
+                if (activeIdRef.current === null) { // unless the user opened another chat meanwhile
+                    skipLoadForIdRef.current = chatId;
+                    setActiveChatId(chatId);
+                }
             }
-            await chatDB.addMessage(chatId, userMessage.role, userMessage.content, dbMeta);
+            await chatDB.addMessage(chatId, 'user', prompt, meta);
 
-            // ── 4. Build payload + stream ──────────────────────
-            // history = prior turns only; current turn is sent via `prompt`
-            // (adapters append it after history — duplicating here = double-send).
-            const payload = buildPayload({
-                prompt: fullPrompt,
-                history: priorMessages,
-                selectedSystemPrompt, customPrompt, llmSettings
-            });
-            if (imagePayload) payload.images = imagePayload;
+            // history = prior turns only; the current turn is sent as `prompt`.
+            const payload = buildPayload({ prompt, history: prior, selectedSystemPrompt, customPrompt, llmSettings });
+            if (imageFiles.length) payload.images = imageFiles.map(f => ({ mimeType: f.mimeType, data: f.dataUrl.split(',')[1] }));
 
-            setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-            let aiText = '';
+            write('');
+            let text = '';
+            let servedModel = payload.model;
             let gotUsage = false;
             let errored = false;
-            let servedModel = payload.model;
-
-            for await (const event of api.streamEvents(payload)) {
-                if (event.type === 'start') {
-                    if (event.model) servedModel = event.model;
-                } else if (event.type === 'chunk') {
-                    aiText += event.text;
-                    writeAssistant(setMessages, aiText);
-                } else if (event.type === 'usage') {
-                    gotUsage = true;
-                    if (event.model) servedModel = event.model;
-                    setUsageLast(event);
-                    setUsageTotals(prev => ({
-                        input: prev.input + event.inputTokens,
-                        output: prev.output + event.outputTokens,
-                        total: prev.total + event.totalTokens
-                    }));
-                } else if (event.type === 'notice') {
-                    setNotice(event.message);
-                } else if (event.type === 'error') {
+            try {
+                for await (const event of streamChat(payload, controller.signal)) {
+                    if ((event.type === 'start' || event.type === 'usage') && event.model) servedModel = event.model;
+                    if (event.type === 'chunk' && typeof event.text === 'string') {
+                        text += event.text;
+                        write(text);
+                    } else if (event.type === 'usage') {
+                        gotUsage = true;
+                        recordUsage(chatId, event);
+                    } else if (event.type === 'notice' && typeof event.message === 'string') {
+                        setNotice(event.message);
+                    }
+                }
+            } catch (err) {
+                if (err?.name !== 'AbortError') {
                     errored = true;
-                    const errText = `[Error] ${event.message}`;
-                    writeAssistant(setMessages, errText, { mustBeEmpty: true });
-                    try { await chatDB.addMessage(chatId, 'assistant', errText); } catch (err) { console.warn('DB write failed:', err?.message); }
+                    const errText = `[Error] ${err?.message || 'Unknown error'}`;
+                    write(errText, { mustBeEmpty: true });
+                    await persist(errText);
                 }
             }
 
-            // ── 5. Handle cancellation ─────────────────────────
-            if (abortedRef.current) {
-                const finalText = aiText ? aiText + CANCEL_SUFFIX : CANCEL_TEXT;
-                writeAssistant(setMessages, finalText);
-                try { await chatDB.addMessage(chatId, 'assistant', finalText); } catch (err) { console.warn('DB write failed:', err?.message); }
+            if (controller.signal.aborted) {
+                const finalText = text ? text + CANCEL_SUFFIX : CANCEL_TEXT;
+                write(finalText);
+                await persist(finalText);
                 return;
             }
-
-            // ── 6. Fallback token estimation ───────────────────
             if (!gotUsage && !errored) {
-                const inputText = [
-                    priorMessages.map(m => m?.content || '').join('\n'),
-                    fullPrompt,
-                    selectedSystemPrompt
-                ].filter(Boolean).join('\n');
-                const inputTokens = estimateTokens(inputText);
-                const outputTokens = estimateTokens(aiText);
-                setUsageLast({ inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, method: 'estimated' });
-                setUsageTotals(prev => ({
-                    input: prev.input + inputTokens,
-                    output: prev.output + outputTokens,
-                    total: prev.total + inputTokens + outputTokens
-                }));
+                const inputTokens = estimateTokens([prior.map(m => m?.content || '').join('\n'), prompt, selectedSystemPrompt].filter(Boolean).join('\n'));
+                const outputTokens = estimateTokens(text);
+                recordUsage(chatId, { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens });
             }
-
-            // ── 7. Persist assistant response ──────────────────
-            if (!errored && aiText.trim()) {
-                writeAssistant(setMessages, aiText, { extra: { model: servedModel } });
-                await chatDB.addMessage(chatId, 'assistant', aiText, { model: servedModel });
+            if (!errored && text.trim()) {
+                write(text, { extra: { model: servedModel } });
+                await chatDB.addMessage(chatId, 'assistant', text, { model: servedModel });
             }
         } catch (error) {
             console.error('API error during chat request:', error);
             setHasRetry(true);
             const errText = error?.message || 'Unknown error';
-            writeAssistant(setMessages, errText, { mustBeEmpty: true });
-            if (chatId) {
-                try { await chatDB.addMessage(chatId, 'assistant', errText); } catch (err) { console.warn('DB write failed:', err?.message); }
-            }
+            write(errText, { mustBeEmpty: true });
+            if (chatId) await persist(errText);
         } finally {
+            if (abortRef.current === controller) abortRef.current = null;
             setIsLoading(false);
         }
-    }, [input, activeChatId, messages, messagesLoaded, selectedSystemPrompt, customPrompt, llmSettings, api, files]);
+    }, [input, activeChatId, messages, messagesLoaded, selectedSystemPrompt, customPrompt, llmSettings, files, createChat, recordUsage, setActiveChatId]);
 
     return {
-        messages, input, isLoading, chatHistory, activeChatId,
-        messagesLoaded, usageLast, usageTotals, chatLogRef, hasRetry, notice,
+        messages, input, isLoading, chatHistory, activeChatId, messagesLoaded, usageLast, usageTotals,
+        chatLogRef, hasRetry, notice, files,
         setInput, setActiveChatId, setChatHistory, setNotice,
-        attachedFiles: files.attachedFiles,
-        attachError: files.attachError,
-        dismissAttachError: files.dismissError,
-        isProcessingFiles: files.isProcessing,
-        addFiles: files.addFiles,
-        removeFile: files.removeFile,
-        sendMessage, deleteChat, renameChat, downloadChat, importChat,
-        parseMarkdownChat, resend, stopGeneration, clearChat, loadChatHistory,
+        sendMessage, deleteChat, renameChat, downloadChat, importMarkdown, resend, stopGeneration, clearChat, loadChatHistory
     };
 }

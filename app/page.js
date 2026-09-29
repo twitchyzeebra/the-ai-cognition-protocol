@@ -1,445 +1,306 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import Sidebar from './components/Sidebar';
+import { useState, useEffect, useMemo } from 'react';
 import chatDB from '../lib/database';
+import Sidebar from './components/Sidebar';
 import LandingPage from './components/LandingPage';
 import ChatColumn from './components/ChatColumn';
 import ResourceColumn from './components/ResourceColumn';
 import CustomPromptEditor from './components/CustomPromptEditor';
 import { builtinLabel } from './components/SystemPromptsSection';
 import useChat, { resolveTarget } from './hooks/useChat';
-import { useCustomPrompts, customPromptKey, isCustomPromptKey } from './hooks/useCustomPrompts';
-import { DEFAULT_SYSTEM_PROMPT, DEFAULT_EFFORT, EFFORT_LEVELS, PROVIDER_LABELS } from '../lib/constants';
+import { useCustomPrompts } from './hooks/useCustomPrompts';
+import { fetchJson, resourceUrl } from './utils/helpers';
+import {
+    DEFAULT_SYSTEM_PROMPT, DEFAULT_EFFORT, EFFORT_LEVELS, PROVIDERS, LEGACY_CUSTOM_PROMPT,
+    customPromptKey, isCustomPromptKey, providerLabel
+} from '../lib/constants';
 
-const PROVIDERS = ['google', 'openai', 'anthropic', 'mistral', 'glm'];
-const emptyPerProvider = () => Object.fromEntries(PROVIDERS.map(p => [p, '']));
-
+const perProvider = () => Object.fromEntries(PROVIDERS.map(p => [p, '']));
 const defaultLlmSettings = () => ({
     provider: 'google',
-    models: emptyPerProvider(),
+    models: perProvider(),
     temperature: 0.7,
     useProviderDefaultTemperature: true,
     useDeveloperKey: true,
     efforts: { ...DEFAULT_EFFORT },
-    apiKeys: emptyPerProvider()
+    apiKeys: perProvider()
 });
 
-// Per-provider effort from saved state. Older saves stored a single `effort` string (Anthropic only).
-const restoreEfforts = (saved) => {
-    const efforts = { ...DEFAULT_EFFORT };
-    const src = saved.efforts && typeof saved.efforts === 'object'
-        ? saved.efforts
-        : (typeof saved.effort === 'string' ? { anthropic: saved.effort } : {});
-    for (const p of Object.keys(EFFORT_LEVELS)) {
-        if (EFFORT_LEVELS[p].includes(src[p])) efforts[p] = src[p];
-    }
-    return efforts;
-};
+// Saved settings over defaults, dropping invalid values. Older saves stored a single `effort` string (Anthropic only).
+function restoreLlmSettings(saved = {}) {
+    const settings = defaultLlmSettings();
+    const efforts = saved.efforts && typeof saved.efforts === 'object' ? saved.efforts : typeof saved.effort === 'string' ? { anthropic: saved.effort } : {};
+    for (const p of Object.keys(EFFORT_LEVELS)) if (EFFORT_LEVELS[p].includes(efforts[p])) settings.efforts[p] = efforts[p];
+    return {
+        ...settings,
+        provider: PROVIDERS.includes(saved.provider) ? saved.provider : settings.provider,
+        models: { ...settings.models, ...saved.models },
+        temperature: typeof saved.temperature === 'number' ? saved.temperature : settings.temperature,
+        useProviderDefaultTemperature: saved.useProviderDefaultTemperature !== false,
+        useDeveloperKey: saved.useDeveloperKey !== false,
+        apiKeys: { ...settings.apiKeys, ...saved.apiKeys }
+    };
+}
 
 export default function Home() {
     // ── App-level state (resources, settings, UI panels) ───
     const [learningResources, setLearningResources] = useState([]);
+    const [systemPrompts, setSystemPrompts] = useState(null); // built-in names; null until fetched
     const [selectedResource, setSelectedResource] = useState(null);
     const [resourceContent, setResourceContent] = useState('');
     const [isChatCollapsed, setIsChatCollapsed] = useState(true);
     const [isResourceCollapsed, setIsResourceCollapsed] = useState(false);
-    const [systemPrompts, setSystemPrompts] = useState([]);
-    const [editorCollapsed, setEditorCollapsed] = useState(true);
-    const [editingPromptKey, setEditingPromptKey] = useState(null);
+    const [editingPromptKey, setEditingPromptKey] = useState(null); // custom prompt open in the editor
     const [selectedSystemPrompt, setSelectedSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
     const [llmSettings, setLlmSettings] = useState(defaultLlmSettings);
     const [isLoaded, setIsLoaded] = useState(false);
 
-    // ── Custom prompts (IndexedDB) ─────────────────────────
     const prompts = useCustomPrompts();
-    const customPromptList = useMemo(
-        () => prompts.customPrompts.map(p => ({ ...p, key: customPromptKey(p.id) })),
-        [prompts.customPrompts]
-    );
+    const customPromptList = useMemo(() => prompts.customPrompts.map(p => ({ ...p, key: customPromptKey(p.id) })), [prompts.customPrompts]);
     const selectedCustom = prompts.getPrompt(selectedSystemPrompt);
-    const customPromptText = selectedCustom?.content || '';
+    const editingPrompt = prompts.getPrompt(editingPromptKey);
 
-    // ── Chat hook ──────────────────────────────────────────
-    const chat = useChat({ selectedSystemPrompt, customPrompt: customPromptText, llmSettings });
+    const chat = useChat({ selectedSystemPrompt, customPrompt: selectedCustom?.content || '', llmSettings });
 
     const target = resolveTarget(llmSettings);
-    const targetLabel = `${PROVIDER_LABELS[target.provider] || target.provider} · ${target.model || 'default'}`;
+    const targetLabel = `${providerLabel(target.provider)} · ${target.model || 'default'}`;
     const settingsNeedAttention = !target.devKey && !(llmSettings.apiKeys?.[target.provider] || '').trim();
-    const promptLabel = isCustomPromptKey(selectedSystemPrompt)
-        ? (selectedCustom?.name || 'Custom prompt')
-        : builtinLabel(selectedSystemPrompt);
+    const promptLabel = isCustomPromptKey(selectedSystemPrompt) ? selectedCustom?.name || 'Custom prompt' : builtinLabel(selectedSystemPrompt);
 
     // ── Initial load ───────────────────────────────────────
     useEffect(() => {
-        const loadAppState = async () => {
+        fetchJson('/api/learning-resources')
+            .then(list => setLearningResources(Array.isArray(list) ? list : []))
+            .catch(error => console.error('Failed to fetch learning resources:', error));
+        fetchJson('/api/system-prompts')
+            .then(list => setSystemPrompts(Array.isArray(list) ? list.filter(p => p !== LEGACY_CUSTOM_PROMPT) : []))
+            .catch(error => console.error('Failed to fetch system prompts:', error));
+
+        (async () => {
             try {
                 await chatDB.migrateFromLocalStorage();
-
-                const storedPageState = localStorage.getItem('pageState');
-
-                if (storedPageState) {
-                    try {
-                        const parsedState = JSON.parse(storedPageState);
-
-                        if (parsedState.activeChatId) {
-                            chat.setActiveChatId(parsedState.activeChatId);
-                        }
-                        if (parsedState.selectedResource) setSelectedResource(parsedState.selectedResource);
-                        if (parsedState.resourceContent) setResourceContent(parsedState.resourceContent);
-                        if (parsedState.isChatCollapsed !== undefined) setIsChatCollapsed(parsedState.isChatCollapsed);
-                        if (parsedState.isResourceCollapsed !== undefined) setIsResourceCollapsed(parsedState.isResourceCollapsed);
-                        if (parsedState.selectedSystemPrompt) setSelectedSystemPrompt(parsedState.selectedSystemPrompt);
-
-                        const saved = parsedState.llmSettings || {};
-                        const defaults = defaultLlmSettings();
-                        setLlmSettings({
-                            ...defaults,
-                            provider: PROVIDERS.includes(saved.provider) ? saved.provider : 'google',
-                            models: { ...defaults.models, ...(saved.models || {}) },
-                            temperature: typeof saved.temperature === 'number' ? saved.temperature : 0.7,
-                            useProviderDefaultTemperature: saved.useProviderDefaultTemperature !== false,
-                            useDeveloperKey: saved.useDeveloperKey !== false,
-                            efforts: restoreEfforts(saved),
-                            apiKeys: { ...defaults.apiKeys, ...(saved.apiKeys || {}) }
-                        });
-                    } catch (error) {
-                        console.error('Failed to parse stored UI state - using defaults');
-                    }
+                let saved = {};
+                try { saved = JSON.parse(localStorage.getItem('pageState')) || {}; } catch { console.error('Failed to parse stored UI state - using defaults'); }
+                if (typeof saved.isChatCollapsed === 'boolean') setIsChatCollapsed(saved.isChatCollapsed);
+                if (typeof saved.isResourceCollapsed === 'boolean') setIsResourceCollapsed(saved.isResourceCollapsed);
+                // Older versions also kept the selection under its own key.
+                const savedPrompt = saved.selectedSystemPrompt || localStorage.getItem('selectedSystemPrompt');
+                localStorage.removeItem('selectedSystemPrompt');
+                if (savedPrompt) setSelectedSystemPrompt(savedPrompt);
+                setLlmSettings(restoreLlmSettings(saved.llmSettings));
+                if (saved.selectedResource) {
+                    fetchJson(resourceUrl(saved.selectedResource))
+                        .then(({ content }) => { setSelectedResource(saved.selectedResource); setResourceContent(content); })
+                        .catch(error => console.warn('Saved resource is no longer available:', error));
                 }
 
-                await chat.loadChatHistory();
+                const chats = await chat.loadChatHistory();
+                if (chats.some(c => c.id === saved.activeChatId)) chat.setActiveChatId(saved.activeChatId);
 
-                // Continue chat from resources page
+                // "Continue Chat" from the resources page
                 const continueSlug = sessionStorage.getItem('continueChat');
                 if (continueSlug) {
                     sessionStorage.removeItem('continueChat');
                     try {
-                        const response = await fetch(`/api/learning-resources/${encodeURIComponent(continueSlug)}`);
-                        const data = await response.json();
-                        await handleUpload(data.content);
+                        await handleUpload((await fetchJson(resourceUrl(continueSlug))).content);
                     } catch (error) {
                         console.error('Failed to load resource for chat:', error);
                         alert('Failed to load resource for chat continuation.');
                     }
                 }
-
-                console.log('Loaded app state from IndexedDB and localStorage');
             } catch (error) {
                 console.error('Failed to load app state:', error);
-                const storedHistory = localStorage.getItem('chatHistory');
-                if (storedHistory) {
-                    try {
-                        chat.setChatHistory(JSON.parse(storedHistory));
-                    } catch (parseError) {
-                        console.error('Failed to parse localStorage fallback');
-                    }
-                }
             } finally {
                 setIsLoaded(true);
             }
-        };
-
-        loadAppState();
-        fetchLearningResources();
-        fetchSystemPrompts();
+        })();
     }, []);
 
-    // Legacy single "Custom Prompt" → migrated IndexedDB prompt
+    // Keep the selected prompt valid: migrate the legacy 'Custom Prompt', drop deleted custom prompts and removed built-ins.
     useEffect(() => {
-        if (!prompts.loaded || selectedSystemPrompt !== 'Custom Prompt') return;
-        handleSelectSystemPrompt(prompts.migratedKey || DEFAULT_SYSTEM_PROMPT);
-    }, [prompts.loaded, prompts.migratedKey, selectedSystemPrompt]);
-
-    // Selected custom prompt was deleted (possibly in another tab) → fall back
-    useEffect(() => {
-        if (prompts.loaded && isCustomPromptKey(selectedSystemPrompt) && !prompts.getPrompt(selectedSystemPrompt)) {
-            handleSelectSystemPrompt(DEFAULT_SYSTEM_PROMPT);
+        if (!isLoaded || !prompts.loaded) return;
+        if (selectedSystemPrompt === LEGACY_CUSTOM_PROMPT) {
+            const first = prompts.customPrompts[0];
+            setSelectedSystemPrompt(prompts.migratedKey || (first ? customPromptKey(first.id) : DEFAULT_SYSTEM_PROMPT));
+        } else if (isCustomPromptKey(selectedSystemPrompt) ? !selectedCustom : systemPrompts?.length && !systemPrompts.includes(selectedSystemPrompt)) {
+            setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
         }
-    }, [prompts.loaded, prompts.customPrompts, selectedSystemPrompt]);
+    }, [isLoaded, prompts.loaded, prompts.customPrompts, prompts.migratedKey, systemPrompts, selectedSystemPrompt, selectedCustom]);
 
-    // ── Persist UI state to localStorage ───────────────────
+    // ── Persist UI state (debounced) ───────────────────────
     useEffect(() => {
         if (!isLoaded) return;
-        const delay = chat.isLoading ? 1000 : 500;
-        const timeoutId = setTimeout(() => {
-            localStorage.setItem('pageState', JSON.stringify({
-                activeChatId: chat.activeChatId,
-                selectedResource,
-                resourceContent,
-                isChatCollapsed,
-                isResourceCollapsed,
-                selectedSystemPrompt,
-                llmSettings
-            }));
-            if (chat.chatHistory.length > 0) {
-                localStorage.setItem('chatHistory', JSON.stringify(chat.chatHistory));
+        const timer = setTimeout(() => {
+            try {
+                localStorage.setItem('pageState', JSON.stringify({
+                    activeChatId: chat.activeChatId, selectedResource, isChatCollapsed, isResourceCollapsed, selectedSystemPrompt, llmSettings
+                }));
+            } catch (error) {
+                console.warn('Failed to save UI state:', error);
             }
-        }, delay);
-        return () => clearTimeout(timeoutId);
-    }, [isLoaded, chat.chatHistory, chat.activeChatId, selectedResource, resourceContent, isChatCollapsed, isResourceCollapsed, selectedSystemPrompt, llmSettings]);
+        }, chat.isLoading ? 1000 : 500);
+        return () => clearTimeout(timer);
+    }, [isLoaded, chat.activeChatId, chat.isLoading, selectedResource, isChatCollapsed, isResourceCollapsed, selectedSystemPrompt, llmSettings]);
 
-    // Dev-only: suppress UI-breaking overlay on unhelpful unhandled rejections
+    // Dev-only: keep the error overlay from blocking the UI on unhelpful Event-type rejections.
     useEffect(() => {
         if (process.env.NODE_ENV !== 'development') return;
         const handler = (event) => {
-            try {
-                const reason = event?.reason;
-                if (reason instanceof Event || (reason && typeof reason === 'object' && reason.type && !reason.stack)) {
-                    console.warn('Suppressed unhandled rejection:', reason);
-                    event.preventDefault();
-                }
-            } catch (e) {
-                // no-op
+            const reason = event?.reason;
+            if (reason instanceof Event || (reason && typeof reason === 'object' && reason.type && !reason.stack)) {
+                console.warn('Suppressed unhandled rejection:', reason);
+                event.preventDefault();
             }
         };
         window.addEventListener('unhandledrejection', handler);
         return () => window.removeEventListener('unhandledrejection', handler);
     }, []);
 
-    // ── Data fetching ──────────────────────────────────────
-    const fetchLearningResources = async () => {
-        try {
-            const response = await fetch('/api/learning-resources');
-            const data = await response.json();
-            setLearningResources(data);
-        } catch (error) {
-            console.error('Failed to fetch learning resources:', error);
-        }
-    };
-
-    const fetchSystemPrompts = async () => {
-        try {
-            const response = await fetch('/api/system-prompts');
-            const data = await response.json();
-            const builtins = Array.isArray(data) ? data.filter(p => p !== 'Custom Prompt') : [];
-            setSystemPrompts(builtins);
-            const savedPrompt = localStorage.getItem('selectedSystemPrompt');
-            if (savedPrompt && (builtins.includes(savedPrompt) || isCustomPromptKey(savedPrompt) || savedPrompt === 'Custom Prompt')) {
-                setSelectedSystemPrompt(savedPrompt);
-            } else if (savedPrompt) {
-                localStorage.removeItem('selectedSystemPrompt');
-                setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
-            }
-        } catch (error) {
-            console.error('Failed to fetch system prompts:', error);
-        }
-    };
-
-    // ── Cross-cutting handlers ─────────────────────────────
+    // ── Handlers ───────────────────────────────────────────
     const handleSelectResource = async (slug) => {
-        if (slug === selectedResource) {
-            setIsResourceCollapsed(prev => !prev);
-        } else {
-            try {
-                const response = await fetch(`/api/learning-resources/${slug}`);
-                const data = await response.json();
-                setSelectedResource(slug);
-                setResourceContent(data.content);
-                setIsResourceCollapsed(false);
-            } catch (error) {
-                console.error(`Failed to fetch resource ${slug}:`, error);
-            }
+        if (slug === selectedResource) return setIsResourceCollapsed(c => !c);
+        try {
+            const { content } = await fetchJson(resourceUrl(slug));
+            setSelectedResource(slug);
+            setResourceContent(content);
+            setIsResourceCollapsed(false);
+        } catch (error) {
+            console.error(`Failed to fetch resource ${slug}:`, error);
         }
     };
 
-    const handleSelectSystemPrompt = useCallback((promptName) => {
-        setSelectedSystemPrompt(promptName);
-        localStorage.setItem('selectedSystemPrompt', promptName);
-    }, []);
-
-    const handleCustomPromptEdit = (key) => {
-        const k = key || (isCustomPromptKey(selectedSystemPrompt) ? selectedSystemPrompt : null);
-        if (!k) return;
-        if (!editorCollapsed && editingPromptKey === k) {
-            setEditorCollapsed(true);
-            return;
-        }
-        setEditingPromptKey(k);
-        setEditorCollapsed(false);
-    };
+    const handleCustomPromptEdit = (key) => setEditingPromptKey(k => (k === key ? null : key));
 
     const handleCreateCustomPrompt = async () => {
-        const n = prompts.customPrompts.length + 1;
-        const key = await prompts.createPrompt(`Custom Prompt ${n}`, '');
-        handleSelectSystemPrompt(key);
-        setEditingPromptKey(key);
-        setEditorCollapsed(false);
+        try {
+            const key = await prompts.createPrompt(`Custom Prompt ${prompts.customPrompts.length + 1}`, '');
+            setSelectedSystemPrompt(key);
+            setEditingPromptKey(key);
+        } catch (error) {
+            console.error('Failed to create custom prompt:', error);
+        }
     };
 
     const handleDeleteCustomPrompt = async (key) => {
-        const p = prompts.getPrompt(key);
-        if (!p) return;
-        await prompts.deletePrompt(p.id);
-        if (editingPromptKey === key) { setEditingPromptKey(null); setEditorCollapsed(true); }
-        if (selectedSystemPrompt === key) handleSelectSystemPrompt(DEFAULT_SYSTEM_PROMPT);
+        const prompt = prompts.getPrompt(key);
+        if (!prompt) return;
+        try {
+            await prompts.deletePrompt(prompt.id);
+        } catch (error) {
+            return console.error('Failed to delete custom prompt:', error);
+        }
+        if (editingPromptKey === key) setEditingPromptKey(null);
+        if (selectedSystemPrompt === key) setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
     };
 
-    const editingPrompt = prompts.getPrompt(editingPromptKey);
+    const closeResource = () => { setSelectedResource(null); setResourceContent(''); };
 
     const handleNewChat = () => {
         chat.clearChat();
-        setSelectedResource(null);
-        setResourceContent('');
+        closeResource();
         setIsChatCollapsed(false);
-
-        setTimeout(() => {
-            const textareaElement = document.querySelector('#chat-input textarea');
-            if (textareaElement) {
-                textareaElement.focus();
-            }
-        }, 50);
+        setTimeout(() => document.querySelector('#chat-input textarea')?.focus(), 50);
     };
 
     const handleSelectChat = (id) => {
-        if (id === chat.activeChatId) {
-            setIsChatCollapsed(prev => !prev);
-        } else {
-            chat.setActiveChatId(id);
-            setSelectedResource(null);
-            setResourceContent('');
-            setIsChatCollapsed(false);
-        }
-    };
-
-    const handleUpdateLlmSettings = (partial) => {
-        setLlmSettings(prev => {
-            const newSettings = { ...prev, ...partial };
-            if (partial.apiKey !== undefined) {
-                newSettings.apiKeys = {
-                    ...prev.apiKeys,
-                    [prev.provider]: partial.apiKey
-                };
-                delete newSettings.apiKey;
-            }
-            return newSettings;
-        });
+        if (id === chat.activeChatId) return setIsChatCollapsed(c => !c);
+        chat.setActiveChatId(id);
+        closeResource();
+        setIsChatCollapsed(false);
     };
 
     const handleResetPageState = async () => {
-        if (window.confirm('Are you sure you want to reset the page state? This will clear all chats and selections. Your custom prompts are kept.')) {
-            try {
-                await chatDB.clearAllData();
-                chat.clearChat();
-                chat.setChatHistory([]);
-                setSelectedResource(null);
-                setResourceContent('');
-                setIsChatCollapsed(true);
-                setIsResourceCollapsed(false);
-                setEditorCollapsed(true);
-                setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
-                setLlmSettings(defaultLlmSettings());
-                localStorage.removeItem('pageState');
-                localStorage.removeItem('chatHistory');
-                localStorage.removeItem('selectedSystemPrompt');
-                alert('Page state has been reset successfully.');
-            } catch (error) {
-                console.error('Failed to reset page state:', error);
-                alert('Failed to reset page state. Please try again.');
+        if (!window.confirm('Are you sure you want to reset the page state? This will clear all chats and selections. Your custom prompts are kept.')) return;
+        try {
+            await chatDB.clearAllData();
+            chat.clearChat();
+            chat.setChatHistory([]);
+            closeResource();
+            setIsChatCollapsed(true);
+            setIsResourceCollapsed(false);
+            setEditingPromptKey(null);
+            setSelectedSystemPrompt(DEFAULT_SYSTEM_PROMPT);
+            setLlmSettings(defaultLlmSettings());
+            for (const key of Object.keys(localStorage)) {
+                if (['pageState', 'chatHistory', 'sidebarState'].includes(key) || key.startsWith('usageTotals:')) localStorage.removeItem(key);
             }
+            alert('Page state has been reset successfully.');
+        } catch (error) {
+            console.error('Failed to reset page state:', error);
+            alert('Failed to reset page state. Please try again.');
         }
     };
 
-    const handleUpload = async (eventOrContent) => {
-        let text;
-        let fileName = 'Imported Chat';
-        let isFileEvent = false;
-
-        if (typeof eventOrContent === 'string') {
-            text = eventOrContent;
-        } else if (eventOrContent?.target?.files) {
-            const file = eventOrContent.target.files[0];
-            if (!file) return;
-            text = await file.text();
-            fileName = file.name.replace(/\.(md|markdown)$/i, '');
-            isFileEvent = true;
-        } else {
-            return;
-        }
-
+    // Imports a Markdown chat export (uploaded file or a chattable learning resource).
+    const handleUpload = async (text) => {
         try {
-            const isMd = text.trim().startsWith('#') || /^#\s+.+/m.test(text);
-            if (isMd) {
-                const { title, messages: mdMessages } = chat.parseMarkdownChat(text);
-                if (!mdMessages || mdMessages.length === 0) {
-                    alert('No messages found in the Markdown file.');
-                } else {
-                    await chat.importChat({ title: title || fileName, messages: mdMessages });
-                    setIsChatCollapsed(false);
-                    return;
-                }
+            if (!text.trim().startsWith('#') && !/^#\s+.+/m.test(text)) {
+                alert('Invalid chat file. Provide a Markdown file created by this app.');
+            } else if (!(await chat.importMarkdown(text))) {
+                alert('No messages found in the Markdown file.');
+            } else {
+                setIsChatCollapsed(false);
             }
-            alert('Invalid chat file. Provide a Markdown file created by this app.');
         } catch (error) {
             console.error('Error importing chat file:', error);
             alert('Failed to import chat file. The file might be corrupted or in the wrong format.');
-        } finally {
-            if (isFileEvent && eventOrContent?.target) {
-                eventOrContent.target.value = null;
-            }
         }
     };
 
+    const handleUploadFile = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (file) await handleUpload(await file.text());
+    };
+
     // ── Render ─────────────────────────────────────────────
-    const showEditor = !editorCollapsed && !!editingPrompt;
-    const showLanding = isChatCollapsed && (!selectedResource || isResourceCollapsed) && !showEditor;
+    const showLanding = isChatCollapsed && (!selectedResource || isResourceCollapsed) && !editingPrompt;
 
     return (
         <div id="container">
             <Sidebar
-                history={chat.chatHistory}
+                chat={chat}
                 onNewChat={handleNewChat}
                 onSelectChat={handleSelectChat}
-                activeChatId={chat.activeChatId}
-                onDownload={chat.downloadChat}
-                onUpload={handleUpload}
+                onUpload={handleUploadFile}
                 learningResources={learningResources}
                 onSelectResource={handleSelectResource}
-                onDeleteChat={chat.deleteChat}
-                onRenameChat={chat.renameChat}
-                onCustomPromptEdit={handleCustomPromptEdit}
-                onCreateCustomPrompt={handleCreateCustomPrompt}
-                onDeleteCustomPrompt={handleDeleteCustomPrompt}
-                customPrompts={customPromptList}
-                systemPrompts={systemPrompts}
-                selectedSystemPrompt={selectedSystemPrompt}
-                onSelectSystemPrompt={handleSelectSystemPrompt}
-                onResetPageState={handleResetPageState}
-                llmSettings={llmSettings}
-                onUpdateLlmSettings={handleUpdateLlmSettings}
+                prompts={{
+                    systemPrompts: systemPrompts || [],
+                    customPrompts: customPromptList,
+                    selectedSystemPrompt,
+                    onSelectSystemPrompt: setSelectedSystemPrompt,
+                    onCustomPromptEdit: handleCustomPromptEdit,
+                    onCreateCustomPrompt: handleCreateCustomPrompt,
+                    onDeleteCustomPrompt: handleDeleteCustomPrompt
+                }}
+                settings={{ llmSettings, onUpdateLlmSettings: (changes) => setLlmSettings(prev => ({ ...prev, ...changes })) }}
                 settingsNeedAttention={settingsNeedAttention}
+                onResetPageState={handleResetPageState}
             />
             <main id="main-content">
                 {showLanding ? (
                     <LandingPage
                         promptLabel={promptLabel}
                         targetLabel={targetLabel}
-                        learningResources={learningResources}
                         onSelectResource={handleSelectResource}
                         onNewChat={handleNewChat}
-                        onStartChat={(text) => {
-                            chat.setInput(text);
-                            setIsChatCollapsed(false);
-                        }}
+                        onStartChat={(text) => { chat.setInput(text); setIsChatCollapsed(false); }}
                     />
                 ) : (
                     <>
-                        {!isChatCollapsed && (
-                            <ChatColumn chat={chat} targetLabel={targetLabel} onCollapse={() => setIsChatCollapsed(true)} />
-                        )}
+                        {!isChatCollapsed && <ChatColumn chat={chat} targetLabel={targetLabel} onCollapse={() => setIsChatCollapsed(true)} />}
                         {selectedResource && !isResourceCollapsed && (
-                            <ResourceColumn
-                                selectedResource={selectedResource}
-                                resourceContent={resourceContent}
-                                onCollapse={() => setIsResourceCollapsed(true)}
-                            />
+                            <ResourceColumn selectedResource={selectedResource} resourceContent={resourceContent} onCollapse={() => setIsResourceCollapsed(true)} />
                         )}
-                        {showEditor && (
+                        {editingPrompt && (
                             <CustomPromptEditor
+                                key={editingPrompt.id}
                                 prompt={editingPrompt}
                                 onChange={(changes) => prompts.updatePrompt(editingPrompt.id, changes)}
                                 onDelete={() => handleDeleteCustomPrompt(editingPromptKey)}
-                                onCollapse={() => setEditorCollapsed(true)}
+                                onCollapse={() => setEditingPromptKey(null)}
                             />
                         )}
                     </>

@@ -1,247 +1,164 @@
 import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
-import * as Googleadapter from '../../../lib/llm-providers/google';
-import * as OpenAIAdapter from '../../../lib/llm-providers/openai';
-import * as AnthropicAdapter from '../../../lib/llm-providers/anthropic';
-import * as MistralAdapter from '../../../lib/llm-providers/mistral';
-import * as GLMAdapter from '../../../lib/llm-providers/glm';
+import * as google from '../../../lib/llm-providers/google';
+import * as anthropic from '../../../lib/llm-providers/anthropic';
+import { openaiCompatible } from '../../../lib/llm-providers/openai-compatible';
 import {
-    DEFAULT_MODELS, VALIDATION_LIMITS, CUSTOM_PROMPT_PREFIX,
-    DEV_KEY_PROVIDER, DEV_KEY_MODEL, EFFORT_LEVELS
+    DEFAULT_MODELS, VALIDATION_LIMITS as LIMITS, DEV_KEY_PROVIDER, DEV_KEY_MODEL, EFFORT_LEVELS,
+    isCustomPromptSelection, maxTemperature
 } from '../../../lib/constants';
 
-// The 'edge' runtime has been removed to allow Node.js APIs like fs and crypto.
-
-const ALGORITHM = 'aes-256-gcm';
-
-
-// Helper for JSON error responses
-const jsonError = (error, status = 400) => new Response(JSON.stringify({ error }), {
-    status, headers: { 'Content-Type': 'application/json' }
-});
-
-// Provider configuration (adapters + fallback models)
-const providers = {
-    google: { adapter: Googleadapter, defaultModel: DEFAULT_MODELS.google[0] },
-    openai: { adapter: OpenAIAdapter, defaultModel: DEFAULT_MODELS.openai[0] },
-    anthropic: { adapter: AnthropicAdapter, defaultModel: DEFAULT_MODELS.anthropic[0] },
-    mistral: { adapter: MistralAdapter, defaultModel: DEFAULT_MODELS.mistral[0] },
-    glm: { adapter: GLMAdapter, defaultModel: DEFAULT_MODELS.glm[0] }
+// Adapter contract: async generator taking { apiKey, model, prompt, history, systemInstruction,
+// temperature?, effort?, images?, signal } and yielding text chunks, plus optional
+// { __usage: { inputTokens, outputTokens, totalTokens, model } } and { __notice: string } objects.
+// It must stop when `signal` aborts (client disconnected) and throw on failure.
+const ADAPTERS = {
+    google: google.sendMessageStream,
+    anthropic: anthropic.sendMessageStream,
+    openai: openaiCompatible('openai'),
+    mistral: openaiCompatible('mistral'),
+    glm: openaiCompatible('glm')
 };
 
-/**
- * Decrypts the given encrypted data.
- * @param {{iv: string, authTag: string, encrypted: string}} encryptedData - The encrypted data object.
- * @param {Buffer} key - The decryption key.
- * @returns {string} - The decrypted plaintext.
- */
-function decrypt(encryptedData, key) {
-    const decipher = crypto.createDecipheriv(
-        ALGORITHM,
-        key,
-        Buffer.from(encryptedData.iv, 'hex')
-    );
-    decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+const FALLBACK_PROMPT = 'You are a helpful AI assistant.';
+const PROMPT_DIR = path.join(process.cwd(), 'SystemPrompts', 'Encrypted');
 
-    const decrypted = Buffer.concat([decipher.update(Buffer.from(encryptedData.encrypted, 'hex')), decipher.final()]);
+const jsonError = (error, status = 400) => Response.json({ error }, { status });
+const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
-    return decrypted.toString('utf8');
-}
-
-
-function loadSystemPrompt(promptName = 'Modes') {
-    const fallbackPrompt = "You are a helpful AI assistant.";
+/** Decrypts SystemPrompts/Encrypted/<name>.json (AES-256-GCM, key in SYSTEM_PROMPT_KEY). */
+function loadSystemPrompt(name) {
+    // Prompt names are bare file names; anything else is a path traversal attempt.
+    if (typeof name !== 'string' || !name || path.basename(name) !== name) {
+        console.warn(`Rejected system prompt name: ${JSON.stringify(name)}`);
+        return FALLBACK_PROMPT;
+    }
     try {
-        // Prevent path traversal: prompt names are bare file names.
-        const safeName = path.basename(String(promptName || ''));
-        if (!safeName || safeName !== promptName) {
-            console.warn(`Rejected system prompt name: ${JSON.stringify(promptName)}`);
-            return fallbackPrompt;
-        }
-        const fileName = `${safeName}.json`;
-        const encryptedPath = path.join(process.cwd(), 'SystemPrompts', 'Encrypted', fileName);
-
-        if (!fs.existsSync(encryptedPath)) {
-            console.log(`Encrypted system prompt file ${fileName} not found, using fallback.`);
-            return fallbackPrompt;
-        }
-
-        const encryptionKey = process.env.SYSTEM_PROMPT_KEY;
-        if (!encryptionKey || !/^[a-fA-F0-9]{64}$/.test(encryptionKey.trim())) {
-            console.error("Error: SYSTEM_PROMPT_KEY is invalid or not found in .env - using fallback prompt.");
-            return fallbackPrompt;
-        }
-
-        const key = Buffer.from(encryptionKey.trim(), 'hex');
-        const encryptedData = JSON.parse(fs.readFileSync(encryptedPath, 'utf8'));
-
-        // Validate the structure of the encrypted file
-        if (!encryptedData.iv || !encryptedData.authTag || !encryptedData.encrypted) {
-            console.error('Error: The encrypted file is malformed. It must contain "iv", "authTag", and "encrypted" keys. Using fallback.');
-            return fallbackPrompt;
-        }
-
-        const decrypted = decrypt(encryptedData, key);
-        console.log("System prompt successfully loaded and decrypted.");
-        return decrypted;
-
+        const key = process.env.SYSTEM_PROMPT_KEY?.trim();
+        if (!/^[a-f0-9]{64}$/i.test(key || '')) throw new Error('SYSTEM_PROMPT_KEY is missing or not 64 hex characters');
+        const { iv, authTag, encrypted } = JSON.parse(fs.readFileSync(path.join(PROMPT_DIR, `${name}.json`), 'utf8'));
+        const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(key, 'hex'), Buffer.from(iv, 'hex'));
+        decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+        return Buffer.concat([decipher.update(Buffer.from(encrypted, 'hex')), decipher.final()]).toString('utf8');
     } catch (error) {
-        console.error('An error occurred during system prompt loading/decryption.');
-        return fallbackPrompt;
+        console.error(`System prompt "${name}" unavailable (${error.code || error.message}); using fallback.`);
+        return FALLBACK_PROMPT;
     }
 }
 
-const isCustomPromptSelection = (name) =>
-    name === 'Custom Prompt' || (typeof name === 'string' && name.startsWith(CUSTOM_PROMPT_PREFIX));
-
 export async function POST(req) {
+    let body;
     try {
-        // Parse request body with error handling
-        let requestData;
-        try {
-            requestData = await req.json();
-        } catch {
-            return jsonError('Invalid JSON request body');
-        }
-
-        const { prompt, history, systemPrompt: selectedPrompt, customPrompt, apiKey, model, temperature, images, effort } = requestData;
-        const useDeveloperKey = !!requestData.useDeveloperKey;
+        body = (await req.json()) || {};
+    } catch {
+        return jsonError('Invalid JSON request body');
+    }
+    try {
+        const { prompt, systemPrompt, customPrompt, effort } = body;
+        const history = Array.isArray(body.history) ? body.history : [];
+        const images = Array.isArray(body.images) ? body.images : [];
+        const useDeveloperKey = !!body.useDeveloperKey;
 
         // Developer key always routes to the configured Anthropic model; the client
         // cannot pick a different provider/model on the server's key.
-        const p = useDeveloperKey ? DEV_KEY_PROVIDER : (requestData.provider || 'google').toLowerCase().trim();
-        const keySan = useDeveloperKey ? process.env.ANTHROPIC_API_KEY?.trim() : apiKey?.trim();
-        const modelSan = useDeveloperKey ? DEV_KEY_MODEL : (model || '').trim();
+        const provider = useDeveloperKey ? DEV_KEY_PROVIDER : (text(body.provider) || 'google').toLowerCase();
+        const apiKey = text(useDeveloperKey ? process.env.ANTHROPIC_API_KEY : body.apiKey);
+        const model = useDeveloperKey ? DEV_KEY_MODEL : text(body.model) || DEFAULT_MODELS[provider]?.[0];
 
-        const tempNum = Number.isFinite(Number(temperature)) ? Number(temperature) : undefined;
-        let temperatureUsed = undefined;
-        if (typeof tempNum === 'number') {
-            if (p === 'anthropic' || p === 'mistral') {
-                // Clamp to [0,1] for Anthropic and Mistral
-                temperatureUsed = Math.min(1, Math.max(0, tempNum));
-            } else {
-                // Clamp to [0,2] for Google and OpenAI
-                temperatureUsed = Math.min(2, Math.max(0, tempNum));
-            }
-        }
-        const effortUsed = (EFFORT_LEVELS[p] || []).includes(effort) ? effort : undefined;
+        if (typeof prompt !== 'string' || !prompt.trim()) return jsonError('Invalid prompt');
+        if (prompt.length > LIMITS.MAX_PROMPT_LENGTH) return jsonError(`Prompt too long. Maximum ${LIMITS.MAX_PROMPT_LENGTH} characters allowed.`, 413);
+        if (apiKey.length > LIMITS.MAX_API_KEY_LENGTH) return jsonError('API key too long', 413);
 
-        // Validate inputs
-        if (!prompt?.trim()) return jsonError('Invalid prompt');
-        if (prompt.length > VALIDATION_LIMITS.MAX_PROMPT_LENGTH) return jsonError(`Prompt too long. Maximum ${VALIDATION_LIMITS.MAX_PROMPT_LENGTH} characters allowed.`, 413);
-
-
-        // Basic validation only for now
-        if (keySan && keySan.length > VALIDATION_LIMITS.MAX_API_KEY_LENGTH) {
-            return jsonError('API key too long', 413);
-        }
-        if (Array.isArray(history)) {
-            if (history.length > VALIDATION_LIMITS.MAX_HISTORY_ITEMS) return jsonError(`Too many history items. Maximum ${VALIDATION_LIMITS.MAX_HISTORY_ITEMS} messages allowed.`, 413);
-            const total = history.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
-            if (total > VALIDATION_LIMITS.MAX_HISTORY_TOTAL) return jsonError(`History too long. Maximum ${VALIDATION_LIMITS.MAX_HISTORY_TOTAL} characters total allowed.`, 413);
-        }
-        // Validate images (optional array of { mimeType, data })
-        const validatedImages = [];
-        if (Array.isArray(images)) {
-            if (images.length > VALIDATION_LIMITS.MAX_IMAGES_PER_MESSAGE) return jsonError(`Too many images. Maximum ${VALIDATION_LIMITS.MAX_IMAGES_PER_MESSAGE} per message.`, 413);
-            for (const img of images) {
-                if (!img?.mimeType || !img?.data) continue;
-                if (img.data.length > VALIDATION_LIMITS.MAX_IMAGE_BASE64) return jsonError('Image too large (max 5MB).', 413); // base64 is ~1.33x
-                validatedImages.push({ mimeType: img.mimeType, data: img.data });
-            }
-        }
-        let baseSystemInstruction;
-        if (isCustomPromptSelection(selectedPrompt)) {
-            baseSystemInstruction = typeof customPrompt === 'string' ? customPrompt : '';
-        } else {
-            baseSystemInstruction = loadSystemPrompt(selectedPrompt);
+        // Blank assistant turns (Stop pressed before any text) are rejected by several providers.
+        const messages = history.map(m => {
+            const role = m?.role === 'user' ? 'user' : 'assistant';
+            const content = typeof m?.content === 'string' ? m.content : '';
+            return { role, content: role === 'assistant' && !content.trim() ? '[empty message]' : content };
+        });
+        if (messages.length > LIMITS.MAX_HISTORY_ITEMS) return jsonError(`Too many history items. Maximum ${LIMITS.MAX_HISTORY_ITEMS} messages allowed.`, 413);
+        if (messages.reduce((sum, m) => sum + m.content.length, 0) > LIMITS.MAX_HISTORY_TOTAL) {
+            return jsonError(`History too long. Maximum ${LIMITS.MAX_HISTORY_TOTAL} characters total allowed.`, 413);
         }
 
-        // Get provider config and validate
-        const config = providers[p];
-        if (!config) return jsonError(`Unsupported provider: ${p}`);
-        if (!keySan) {
-            return jsonError(useDeveloperKey
-                ? 'Developer key is not configured on the server (ANTHROPIC_API_KEY missing).'
-                : 'Missing API key. Provide your key in Settings.', useDeveloperKey ? 503 : 400);
+        if (images.length > LIMITS.MAX_IMAGES_PER_MESSAGE) return jsonError(`Too many images. Maximum ${LIMITS.MAX_IMAGES_PER_MESSAGE} per message.`, 413);
+        const validImages = images
+            .filter(img => img?.mimeType && typeof img.mimeType === 'string' && img.data && typeof img.data === 'string')
+            .map(({ mimeType, data }) => ({ mimeType, data }));
+        if (validImages.some(img => img.data.length > LIMITS.MAX_IMAGE_BASE64)) return jsonError('Image too large (max 5MB).', 413); // base64 is ~1.33x
+
+        const adapter = ADAPTERS[provider];
+        if (!adapter) return jsonError(`Unsupported provider: ${provider}`);
+        if (!apiKey) {
+            return useDeveloperKey
+                ? jsonError('Developer key is not configured on the server (ANTHROPIC_API_KEY missing).', 503)
+                : jsonError('Missing API key. Provide your key in Settings.');
         }
 
-        const effectiveModel = modelSan || config.defaultModel;
+        const temp = Number(body.temperature);
+        const params = {
+            apiKey,
+            model,
+            prompt,
+            history: messages,
+            systemInstruction: isCustomPromptSelection(systemPrompt)
+                ? (typeof customPrompt === 'string' ? customPrompt : '')
+                : loadSystemPrompt(systemPrompt),
+            temperature: Number.isFinite(temp) ? Math.min(maxTemperature(provider), Math.max(0, temp)) : undefined,
+            effort: EFFORT_LEVELS[provider]?.includes(effort) ? effort : undefined,
+            images: validImages.length ? validImages : undefined
+        };
 
-        // Normalize history and create stream
-        const normalizedHistory = Array.isArray(history) ? history.map(m => ({
-            role: m.role === 'user' ? 'user' : 'assistant',
-            content: (m.content || (m.parts?.[0]?.text || '')).toString()
-        })) : [];
+        // Aborts when the client disconnects (Stop button, closed tab) so the provider request stops too.
+        const abort = new AbortController();
+        const signal = req.signal ? AbortSignal.any([req.signal, abort.signal]) : abort.signal;
+        const encoder = new TextEncoder();
 
-        const finalSystemInstruction = [baseSystemInstruction].filter(Boolean).join('\n\n');
         const stream = new ReadableStream({
             async start(controller) {
-                const encoder = new TextEncoder();
-                const sendEvent = (type, data) => {
+                const send = (type, data = {}) => {
                     try {
-                        const message = `data: ${JSON.stringify({ type, ...data })}\n\n`;
-                        controller.enqueue(encoder.encode(message));
-                    } catch (e) {
-                        console.error("Error sending event:", e);
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type, ...data })}\n\n`));
+                    } catch {
+                        abort.abort(); // stream already closed by the client
                     }
                 };
-
                 try {
-                    sendEvent('start', { provider: p, model: effectiveModel });
-
-                    const textStream = config.adapter.sendMessageStream({
-                        apiKey: keySan,
-                        model: effectiveModel,
-                        prompt: prompt,
-                        history: normalizedHistory,
-                        systemInstruction: finalSystemInstruction,
-                        temperature: temperatureUsed,
-                        effort: effortUsed,
-                        images: validatedImages.length > 0 ? validatedImages : undefined,
-                    });
-
-                    let yieldedAny = false;
-
-                    for await (const piece of textStream) {
-                        if (piece && typeof piece === 'object') {
-                            if (piece.__usage) sendEvent('usage', piece.__usage);
-                            if (piece.__notice) sendEvent('notice', { message: piece.__notice });
+                    send('start', { provider, model });
+                    let yielded = false;
+                    for await (const piece of adapter({ ...params, signal })) {
+                        if (signal.aborted) break;
+                        if (typeof piece === 'string') {
+                            if (piece) {
+                                yielded = true;
+                                send('chunk', { text: piece });
+                            }
                             continue;
                         }
-                        const text = typeof piece === 'string' ? piece : '';
-                        if (text.length > 0) {
-                            yieldedAny = true;
-                            sendEvent('chunk', { text });
-                        }
+                        if (piece?.__usage) send('usage', piece.__usage);
+                        if (piece?.__notice) send('notice', { message: piece.__notice });
                     }
-
-                    if (!yieldedAny) {
-                        console.warn("Adapter stream returned no text", { provider: p, model: effectiveModel });
-                        sendEvent('error', { message: `Provider=${p} produced no text. model=${effectiveModel}` });
-                    } else {
-                        sendEvent('done', {});
-                    }
+                    if (signal.aborted) return;
+                    if (yielded) send('done');
+                    else send('error', { message: `Provider=${provider} produced no text. model=${model}` });
                 } catch (error) {
-                    console.warn("Error during stream generation.", error?.message || error);
-                    sendEvent('error', { message: error.message || 'Unknown error'});
+                    if (signal.aborted) return;
+                    console.warn('Error during stream generation.', error?.message || error);
+                    send('error', { message: error?.message || 'Unknown error' });
                 } finally {
-                    try { controller.close(); } catch (e) { /* ignore */ }
+                    try { controller.close(); } catch { /* already closed */ }
                 }
             },
+            cancel() {
+                abort.abort();
+            }
         });
 
         return new Response(stream, {
-            headers: {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-            },
+            headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' }
         });
-
     } catch (error) {
-        console.error("Handler error - request processing failed");
+        console.error('Handler error - request processing failed', error);
         return jsonError(`Internal Server Error: ${error.message}`, 500);
     }
 }

@@ -3,49 +3,33 @@ import path from 'path';
 import { NextResponse } from 'next/server';
 import matter from 'gray-matter';
 
-function calculateReadingTime(content) {
-    const plainText = content.replace(/```[\s\S]*?```|`[^`]+`|[#*_>\[\]()!-]/g, '');
-    const wordCount = plainText.trim().split(/\s+/).length;
-    return Math.max(1, Math.ceil(wordCount / 200));
-}
+const ROOT = path.join(process.cwd(), 'learning-resources');
+const CATEGORIES = { Polished: 'polished', Raw: 'raw', Human: 'human' };
 
-function isChattable(content) {
-    return content.trim().startsWith('## User');
-}
+const readingTime = (content) => {
+    const words = content.replace(/```[\s\S]*?```|`[^`]+`|[#*_>\[\]()!-]/g, '').trim().split(/\s+/).length;
+    return Math.max(1, Math.ceil(words / 200));
+};
 
 export async function GET() {
     try {
-        const postsDirectory = path.join(process.cwd(), 'learning-resources');
-        
-        const categories = [
-            { dir: 'Polished', category: 'polished' },
-            { dir: 'Raw', category: 'raw' },
-            { dir: 'Human', category: 'human' },
-        ];
-
-        const resources = [];
-
-        for (const { dir, category } of categories) {
-            const fullPath = path.join(postsDirectory, dir);
-            if (!fs.existsSync(fullPath)) continue;
-
-            const files = fs.readdirSync(fullPath).filter(f => f.toLowerCase().endsWith('.md'));
-            files.forEach(filename => {
-                const slug = filename.replace(/\.md$/, '');
-                const filePath = path.join(fullPath, filename);
-                const fileContent = fs.readFileSync(filePath, 'utf-8');
-                const { data, content } = matter(fileContent);
-                resources.push({
-                    slug: `${dir}/${slug}`,
-                    title: slug,
+        const resources = Object.entries(CATEGORIES).flatMap(([dir, category]) => {
+            const dirPath = path.join(ROOT, dir);
+            if (!fs.existsSync(dirPath)) return [];
+            return fs.readdirSync(dirPath).filter(f => f.toLowerCase().endsWith('.md')).map(filename => {
+                const title = filename.replace(/\.md$/, '');
+                const { data, content } = matter(fs.readFileSync(path.join(dirPath, filename), 'utf-8'));
+                return {
+                    slug: `${dir}/${title}`,
+                    title,
                     category,
                     complexity: data.complexity,
-                    chattable: data.chattable !== undefined ? data.chattable : isChattable(content),
-                    readingTime: calculateReadingTime(content)
-                });
+                    // Exported chats (starting with a '## User' turn) can be continued in the chat.
+                    chattable: data.chattable !== undefined ? data.chattable : content.trim().startsWith('## User'),
+                    readingTime: readingTime(content)
+                };
             });
-        }
-
+        });
         return NextResponse.json(resources);
     } catch (error) {
         console.error('Failed to list learning resources:', error);

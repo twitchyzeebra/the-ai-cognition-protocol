@@ -1,6 +1,7 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { downloadText, safeFilename } from '../utils/helpers';
 
 /**
  * Editor for one user-authored system prompt.
@@ -11,40 +12,25 @@ export default function CustomPromptEditor({ prompt, onChange, onDelete, onColla
     const fileRef = useRef(null);
     const [confirmDelete, setConfirmDelete] = useState(false);
 
-    if (!prompt) {
-        return (
-            <div id="custom-prompt-column">
-                <div className="column-header">
-                    <h2>Custom System Prompt</h2>
-                    <button className="collapse-btn" onClick={onCollapse} title="Close editor">×</button>
-                </div>
-                <p className="editor-description">Select or create a custom prompt in the sidebar to edit it here.</p>
-            </div>
-        );
-    }
+    // The delete confirmation expires after 3 seconds.
+    useEffect(() => {
+        if (!confirmDelete) return;
+        const timer = setTimeout(() => setConfirmDelete(false), 3000);
+        return () => clearTimeout(timer);
+    }, [confirmDelete]);
 
     const handleImport = async (e) => {
         const file = e.target.files?.[0];
         e.target.value = '';
         if (!file) return;
         try {
-            const text = await file.text();
-            onChange({ content: text, ...(prompt.content ? {} : { name: prompt.name === 'Untitled Prompt' ? file.name.replace(/\.[^.]+$/, '') : prompt.name }) });
+            const content = await file.text();
+            // A still-empty, unnamed prompt takes the file's name.
+            const rename = !prompt.content && prompt.name === 'Untitled Prompt';
+            onChange({ content, ...(rename && { name: file.name.replace(/\.[^.]+$/, '') }) });
         } catch (err) {
             alert(`Could not read ${file.name}: ${err.message}`);
         }
-    };
-
-    const handleExport = () => {
-        const blob = new Blob([prompt.content || ''], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${(prompt.name || 'prompt').replace(/[\\/:*?"<>|]/g, '_')}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
     };
 
     return (
@@ -69,12 +55,17 @@ export default function CustomPromptEditor({ prompt, onChange, onDelete, onColla
                     <button className="sidebar-btn" onClick={() => fileRef.current?.click()} title="Load prompt text from a .txt or .md file">
                         📂 Import from file
                     </button>
-                    <button className="sidebar-btn" onClick={handleExport} disabled={!prompt.content} title="Download prompt as .txt">
+                    <button
+                        className="sidebar-btn"
+                        onClick={() => downloadText(prompt.content || '', `${safeFilename(prompt.name, 'prompt')}.txt`)}
+                        disabled={!prompt.content}
+                        title="Download prompt as .txt"
+                    >
                         💾 Export
                     </button>
                     <button
                         className={`sidebar-btn ${confirmDelete ? 'danger' : ''}`}
-                        onClick={() => { if (confirmDelete) { onDelete(); } else { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 3000); } }}
+                        onClick={() => (confirmDelete ? onDelete() : setConfirmDelete(true))}
                         title="Delete this prompt"
                     >
                         {confirmDelete ? 'Click again to delete' : '🗑️ Delete'}
@@ -89,9 +80,7 @@ export default function CustomPromptEditor({ prompt, onChange, onDelete, onColla
                     placeholder={'Write the system prompt here.\n\nExample: You are a tutor who answers with one clarifying question before explaining.'}
                 />
                 <div className="char-counter">{prompt.content.length.toLocaleString()} characters</div>
-                <p className="editor-hint">
-                    Saved automatically to this browser. Select it in the sidebar to use it for new messages.
-                </p>
+                <p className="editor-hint">Saved automatically to this browser. Select it in the sidebar to use it for new messages.</p>
             </div>
         </div>
     );

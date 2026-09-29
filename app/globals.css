@@ -63,7 +63,6 @@ body {
     padding: 10px;
     background: var(--container-bg);
     margin-bottom: 20px;
-    -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
 }
 
@@ -346,11 +345,14 @@ body {
     align-items: flex-start;
 }
 
+/* Long content never expands the chat panel: wrap and contain overflow */
 .message .content {
     max-width: 83%;
     padding: 0px 12px;
     border-radius: 15px;
     line-height: 1.35;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
 }
 
 .message.user .content {
@@ -365,11 +367,6 @@ body {
     border-bottom-left-radius: 4px;
 }
 
-/* Ensure long content never expands the chat panel; wrap and contain overflow */
-.message .content {
-    word-wrap: break-word;
-    overflow-wrap: anywhere;
-}
 .message .content pre,
 .message .content code {
     white-space: pre-wrap;
@@ -399,41 +396,6 @@ body {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
-}
-
-
-
-#send-button {
-    padding: 0 .8vh+.8vw;
-    border-radius: 0.3vh+0.3vw;
-    border: none;
-    background: var(--accent-color);
-    color: white;
-    font-size: 5px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-#send-button:hover {
-    background: #3a7bc8;
-}
-
-.loading-indicator span {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: #fff;
-    margin: 0 2px;
-    animation: loading-dots 1.4s infinite ease-in-out both;
-}
-
-.loading-indicator span:nth-child(1) { animation-delay: -0.32s; }
-.loading-indicator span:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes loading-dots {
-    0%, 80%, 100% { transform: scale(0); }
-    40% { transform: scale(1.0); }
 }
 
 /* Landing page styles */
@@ -610,7 +572,6 @@ body {
     color: #cfcfcf;
     white-space: normal;      /* allow wrapping if truly necessary */
     overflow: hidden;        /* don't clip */
-    text-overflow: unset;     /* no ellipsis */
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 .header-usage::before {
@@ -640,21 +601,6 @@ body {
     gap: 10px;
     margin: 15px 0;
 }
-
-.panel-toggle-btn {
-    padding: 8px 15px;
-    background-color: var(--accent-color);
-    border: none;
-    border-radius: 4px;
-    color: white;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.panel-toggle-btn:hover {
-    background-color: #0090ea;
-}
 #custom-prompt-column {
     flex: 1;
     height: 100%;
@@ -672,13 +618,6 @@ body {
     flex-direction: column;
     height: 100%;
     overflow-y: auto;
-}
-
-.editor-description {
-    margin: 0 0 16px 0;
-    color: #aaa;
-    font-size: 0.9rem;
-    line-height: 1.4;
 }
 
 .editor-field {

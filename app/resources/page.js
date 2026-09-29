@@ -5,87 +5,56 @@ import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { convertMarkdownToPdf } from '../utils/markdownToPdf';
+import { downloadText, fetchJson, resourceUrl } from '../utils/helpers';
 import './resources.css';
 
+const TABS = [['polished', '📖 Polished Documents'], ['raw', '🔧 Raw Documents'], ['human', '✍️ Raw Human Writings']];
 
 export default function ResourcesPage() {
-    const [resources, setResources] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [resources, setResources] = useState(null); // null while loading
+    const [activeTab, setActiveTab] = useState('polished');
     const [selectedResource, setSelectedResource] = useState(null);
     const [resourceContent, setResourceContent] = useState('');
     const [loadingContent, setLoadingContent] = useState(false);
     const [downloadingPdf, setDownloadingPdf] = useState(false);
-    const contentRef = useRef(null);
-    const [activeTab, setActiveTab] = useState('polished');
-
+    const requestId = useRef(0); // ignores responses for cards that are no longer open
 
     useEffect(() => {
-        fetchResources();
+        fetchJson('/api/learning-resources')
+            .then(list => setResources(Array.isArray(list) ? list : []))
+            .catch(error => { console.error('Failed to fetch resources:', error); setResources([]); });
     }, []);
 
-    const fetchResources = async () => {
-        try {
-            const response = await fetch('/api/learning-resources');
-            const data = await response.json();
-            setResources(data);
-        } catch (error) {
-            console.error('Failed to fetch resources:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleCardClick = async (resource) => {
+    const openResource = async (resource) => {
+        const id = ++requestId.current;
         setSelectedResource(resource);
         setLoadingContent(true);
+        let content;
         try {
-            const response = await fetch(`/api/learning-resources/${encodeURIComponent(resource.slug)}`);
-            const data = await response.json();
-            setResourceContent(data.content);
+            content = (await fetchJson(resourceUrl(resource.slug))).content;
         } catch (error) {
             console.error('Failed to fetch resource content:', error);
-            setResourceContent('Failed to load resource content.');
-        } finally {
-            setLoadingContent(false);
+            content = 'Failed to load resource content.';
         }
+        if (id !== requestId.current) return;
+        setResourceContent(content);
+        setLoadingContent(false);
     };
 
     const closeModal = () => {
+        requestId.current++;
         setSelectedResource(null);
         setResourceContent('');
         setLoadingContent(false);
     };
 
-    const downloadMarkdown = () => {
-        if (!selectedResource || !resourceContent) return;
-
-        // Remove category prefix from filename
-        const filename = selectedResource.slug.split('/').pop();
-
-        const blob = new Blob([resourceContent], { type: 'text/markdown' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${filename}.md`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
+    // Download names drop the category prefix ("Polished/Title" → "Title").
+    const fileName = () => selectedResource.slug.split('/').pop();
 
     const downloadPdf = async () => {
-        if (!selectedResource || !resourceContent) return;
-
         setDownloadingPdf(true);
-
         try {
-            // Remove category prefix from filename
-            const filename = selectedResource.slug.split('/').pop();
-
-            await convertMarkdownToPdf(
-                resourceContent,
-                `${filename}.pdf`
-            );
+            await convertMarkdownToPdf(resourceContent, `${fileName()}.pdf`);
         } catch (error) {
             console.error('Failed to generate PDF:', error);
             alert(`Failed to generate PDF: ${error.message}`);
@@ -94,13 +63,12 @@ export default function ResourcesPage() {
         }
     };
 
-    const handleContinueChat = () => {
-        if (!selectedResource) return;
+    const continueChat = () => {
         sessionStorage.setItem('continueChat', selectedResource.slug);
         window.location.href = '/';
     };
 
-    if (loading) {
+    if (!resources) {
         return (
             <div className="resources-page">
                 <div className="loading">Loading resources...</div>
@@ -116,49 +84,21 @@ export default function ResourcesPage() {
                     <h1>Learning Resources</h1>
                     <p className="subtitle">I explore the human mind in collaboration with AI. Here you will find our creations. Some of these documents explore failure states of the human mind and edges of AI capability. They can be intense. They are not advice. I started using AI in early 2025 after a breakup to make my internal experience legible. The Flavoured System—my current AI prompt—uses multiple 'personalities' that blend as needed. Documents are split: Raw (technical analysis, personal material), Polished (designed for accessibility), and Human (What I have written myself to explain things to AI).</p>
                     <div className="tabs-container">
-                        <button
-                            className={`tab-btn ${activeTab === 'polished' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('polished')}
-                        >
-                            📖 Polished Documents
-                        </button>
-                        <button
-                            className={`tab-btn ${activeTab === 'raw' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('raw')}
-                        >
-                            🔧 Raw Documents
-                        </button>
-                        <button
-                            className={`tab-btn ${activeTab === 'human' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('human')}
-                        >
-                            ✍️ Raw Human Writings
-                        </button>
+                        {TABS.map(([tab, label]) => (
+                            <button key={tab} className={`tab-btn ${activeTab === tab ? 'active' : ''}`} onClick={() => setActiveTab(tab)}>{label}</button>
+                        ))}
                     </div>
                 </div>
-
             </header>
 
             <main className="resources-main">
                 <div className="cards-grid">
-                    {resources.filter(resource => resource.category === activeTab).map((resource) => (
-                        <div
-                            key={resource.slug}
-                            className="resource-card"
-                            onClick={() => handleCardClick(resource)}
-                        >
+                    {resources.filter(r => r.category === activeTab).map(resource => (
+                        <div key={resource.slug} className="resource-card" onClick={() => openResource(resource)}>
                             <div className="card-icon">📚</div>
                             <h3 className="card-title">{resource.title}</h3>
-                            {resource.complexity && (
-                                <div className={`complexity-badge ${resource.complexity}`}>
-                                    {resource.complexity}
-                                </div>
-                            )}
-                            {resource.readingTime && (
-                                <div className="reading-time">
-                                    {resource.readingTime} min read
-                                </div>
-                            )}
+                            {resource.complexity && <div className={`complexity-badge ${resource.complexity}`}>{resource.complexity}</div>}
+                            {resource.readingTime && <div className="reading-time">{resource.readingTime} min read</div>}
                             <div className="card-footer">
                                 <span className="click-hint">Click to read →</span>
                             </div>
@@ -175,7 +115,7 @@ export default function ResourcesPage() {
                             <div className="modal-actions">
                                 <button
                                     className="download-btn"
-                                    onClick={downloadMarkdown}
+                                    onClick={() => resourceContent && downloadText(resourceContent, `${fileName()}.md`, 'text/markdown')}
                                     title="Download as Markdown"
                                     disabled={loadingContent}
                                 >
@@ -184,22 +124,15 @@ export default function ResourcesPage() {
                                 </button>
                                 <button
                                     className="download-btn"
-                                    onClick={downloadPdf}
+                                    onClick={() => resourceContent && downloadPdf()}
                                     title="Download as PDF"
                                     disabled={loadingContent || downloadingPdf}
                                 >
                                     <span className="btn-icon">📑</span>
-                                    <span className="btn-text">
-                                        {downloadingPdf ? 'Generating...' : 'PDF'}
-                                    </span>
+                                    <span className="btn-text">{downloadingPdf ? 'Generating...' : 'PDF'}</span>
                                 </button>
-                                {selectedResource?.chattable && (
-                                    <button
-                                        className="download-btn chat-btn"
-                                        onClick={handleContinueChat}
-                                        title="Continue this conversation"
-                                        disabled={loadingContent}
-                                    >
+                                {selectedResource.chattable && (
+                                    <button className="download-btn chat-btn" onClick={continueChat} title="Continue this conversation" disabled={loadingContent}>
                                         <span className="btn-icon">💬</span>
                                         <span className="btn-text">Continue Chat</span>
                                     </button>
@@ -214,10 +147,8 @@ export default function ResourcesPage() {
                                     <p>Loading content...</p>
                                 </div>
                             ) : (
-                                <div className="markdown-content" ref={contentRef}>
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                        {resourceContent}
-                                    </ReactMarkdown>
+                                <div className="markdown-content">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{resourceContent}</ReactMarkdown>
                                 </div>
                             )}
                         </div>

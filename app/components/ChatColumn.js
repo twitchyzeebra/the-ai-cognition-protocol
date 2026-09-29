@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useState } from 'react';
 import ChatLog from './ChatLog';
 import { ACCEPTED_FILE_EXTENSIONS } from '../../lib/constants';
 
@@ -13,9 +13,7 @@ function AttachmentChip({ file, onRemove }) {
             </span>
         );
     }
-    const status = file.status === 'processing' ? 'Reading…'
-        : file.status === 'error' ? (file.error || 'Failed')
-        : (file.meta || '');
+    const status = file.status === 'processing' ? 'Reading…' : file.status === 'error' ? file.error || 'Failed' : file.meta || '';
     return (
         <span className={`file-chip ${file.status}`} title={file.status === 'error' ? file.error : file.name}>
             <span className="file-chip-icon">{TYPE_ICON[file.type] || '📄'}</span>
@@ -29,49 +27,21 @@ function AttachmentChip({ file, onRemove }) {
 export default function ChatColumn({ chat, onCollapse, targetLabel }) {
     const fileInputRef = useRef(null);
     const [dragging, setDragging] = useState(false);
+    const { files, usageLast: last, usageTotals: totals } = chat;
+    const readyCount = files.readyFiles.length;
+    const canSend = !chat.isLoading && !files.isProcessing && !(chat.activeChatId && !chat.messagesLoaded) && (chat.input.trim().length > 0 || readyCount > 0);
 
-    const handleFileSelect = useCallback((e) => {
-        if (e.target.files?.length) {
-            chat.addFiles(Array.from(e.target.files));
-            e.target.value = ''; // reset so same file can be re-selected
-        }
-    }, [chat]);
-
-    const handleDrop = useCallback((e) => {
-        e.preventDefault();
-        setDragging(false);
-        if (e.dataTransfer.files?.length) chat.addFiles(Array.from(e.dataTransfer.files));
-    }, [chat]);
-
-    const handleDragOver = useCallback((e) => { e.preventDefault(); setDragging(true); }, []);
-    const handleDragLeave = useCallback((e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false);
-    }, []);
-
-    // Paste images/files straight from the clipboard.
-    const handlePaste = useCallback((e) => {
-        const items = Array.from(e.clipboardData?.items || []);
-        const files = items.filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean);
-        if (files.length) {
-            e.preventDefault();
-            chat.addFiles(files);
-        }
-    }, [chat]);
-
-    const canSend = !chat.isLoading
-        && !chat.isProcessingFiles
-        && !(chat.activeChatId && !chat.messagesLoaded)
-        && (chat.input.trim().length > 0 || chat.attachedFiles.some(f => f.status === 'ready'));
-
-    const readyCount = chat.attachedFiles.filter(f => f.status === 'ready').length;
+    const attach = (list) => { if (list?.length) files.addFiles(Array.from(list)); };
+    const lastUsage = last && `Last: ${last.inputTokens} in + ${last.outputTokens} out = ${last.totalTokens} tokens`;
+    const sessionUsage = `Session: ${totals.input} in + ${totals.output} out = ${totals.total} tokens`;
 
     return (
         <div
             id="chat-column"
             className={dragging ? 'drag-over' : ''}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); attach(e.dataTransfer.files); }}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}
         >
             <div className="column-header">
                 <div className="column-title">
@@ -79,17 +49,10 @@ export default function ChatColumn({ chat, onCollapse, targetLabel }) {
                     {targetLabel && <span className="target-label" title="Provider and model for the next message">{targetLabel}</span>}
                 </div>
                 <div className="header-actions">
-                    {(chat.usageLast || chat.usageTotals.total > 0) && (
-                        <div
-                            className="header-usage"
-                            title={`${chat.usageLast ? `Last: ${chat.usageLast.inputTokens} in + ${chat.usageLast.outputTokens} out = ${chat.usageLast.totalTokens} tokens` : ''}${chat.usageLast ? ' | ' : ''}Session: ${chat.usageTotals.input} in + ${chat.usageTotals.output} out = ${chat.usageTotals.total} tokens`}
-                        >
-                            {chat.usageLast && (
-                                <div className="usage-line last">
-                                    Last: {chat.usageLast.inputTokens} in + {chat.usageLast.outputTokens} out = {chat.usageLast.totalTokens} tokens
-                                </div>
-                            )}
-                            <div className="usage-line session">Session: {chat.usageTotals.input} in + {chat.usageTotals.output} out = {chat.usageTotals.total} tokens</div>
+                    {(last || totals.total > 0) && (
+                        <div className="header-usage" title={last ? `${lastUsage} | ${sessionUsage}` : sessionUsage}>
+                            {last && <div className="usage-line last">{lastUsage}</div>}
+                            <div className="usage-line session">{sessionUsage}</div>
                         </div>
                     )}
                     <button className="collapse-btn" onClick={onCollapse} title="Collapse chat">×</button>
@@ -106,18 +69,16 @@ export default function ChatColumn({ chat, onCollapse, targetLabel }) {
                     <button className="banner-close" onClick={() => chat.setNotice('')} title="Dismiss">×</button>
                 </div>
             )}
-            {chat.attachError && (
+            {files.attachError && (
                 <div className="chat-banner warn">
-                    <span>{chat.attachError}</span>
-                    <button className="banner-close" onClick={chat.dismissAttachError} title="Dismiss">×</button>
+                    <span>{files.attachError}</span>
+                    <button className="banner-close" onClick={files.dismissError} title="Dismiss">×</button>
                 </div>
             )}
 
-            {chat.attachedFiles.length > 0 && (
+            {files.attachedFiles.length > 0 && (
                 <div className="attached-files">
-                    {chat.attachedFiles.map((file) => (
-                        <AttachmentChip key={file.id} file={file} onRemove={() => chat.removeFile(file.id)} />
-                    ))}
+                    {files.attachedFiles.map(file => <AttachmentChip key={file.id} file={file} onRemove={() => files.removeFile(file.id)} />)}
                 </div>
             )}
 
@@ -127,7 +88,7 @@ export default function ChatColumn({ chat, onCollapse, targetLabel }) {
                     type="file"
                     accept={ACCEPTED_FILE_EXTENSIONS}
                     multiple
-                    onChange={handleFileSelect}
+                    onChange={(e) => { attach(e.target.files); e.target.value = ''; }}
                     style={{ display: 'none' }}
                 />
                 <button
@@ -143,7 +104,11 @@ export default function ChatColumn({ chat, onCollapse, targetLabel }) {
                 <textarea
                     value={chat.input}
                     onChange={(e) => chat.setInput(e.target.value)}
-                    onPaste={handlePaste}
+                    onPaste={(e) => {
+                        // Paste images/files straight from the clipboard.
+                        const pasted = Array.from(e.clipboardData?.items || []).filter(i => i.kind === 'file').map(i => i.getAsFile()).filter(Boolean);
+                        if (pasted.length) { e.preventDefault(); files.addFiles(pasted); }
+                    }}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
@@ -154,12 +119,10 @@ export default function ChatColumn({ chat, onCollapse, targetLabel }) {
                     disabled={chat.isLoading}
                     rows={1}
                 />
-                <button className="send-btn" onClick={chat.sendMessage} disabled={!canSend} title={chat.isProcessingFiles ? 'Reading attachments…' : 'Send (Enter)'}>
-                    {chat.isLoading ? 'Thinking…' : chat.isProcessingFiles ? 'Reading…' : 'Send'}
+                <button className="send-btn" onClick={chat.sendMessage} disabled={!canSend} title={files.isProcessing ? 'Reading attachments…' : 'Send (Enter)'}>
+                    {chat.isLoading ? 'Thinking…' : files.isProcessing ? 'Reading…' : 'Send'}
                 </button>
-                {chat.isLoading && (
-                    <button className="stop-btn" onClick={chat.stopGeneration}>Stop</button>
-                )}
+                {chat.isLoading && <button className="stop-btn" onClick={chat.stopGeneration}>Stop</button>}
                 {!chat.isLoading && chat.hasRetry && chat.input === '' && (
                     <button onClick={chat.resend} title="Put your last message back in the box">Copy Last</button>
                 )}

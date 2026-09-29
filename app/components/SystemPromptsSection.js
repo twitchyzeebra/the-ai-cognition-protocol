@@ -1,29 +1,17 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { DEFAULT_SYSTEM_PROMPT } from '../../lib/constants';
-import { isCustomPromptKey } from '../hooks/useCustomPrompts';
+import { DEFAULT_SYSTEM_PROMPT, isCustomPromptKey } from '../../lib/constants';
 
-const PROMPT_DESCRIPTIONS = {
-    // Add one-line descriptions keyed by built-in prompt name (file name without .json).
-};
+// One-line descriptions keyed by built-in prompt name (file name without .json), shown on hover.
+const PROMPT_DESCRIPTIONS = {};
 
-export const builtinLabel = (p) => (p || '').replace(/_/g, ' ').replace(/-/g, ' ');
+export const builtinLabel = (p) => (p || '').replace(/[_-]/g, ' ');
 
-const getPromptDescription = (prompt) =>
-    PROMPT_DESCRIPTIONS[prompt] || 'Built-in system prompt.';
-
-/**
- * System prompt picker: built-in prompts + user-authored prompts, with create/edit/delete.
- */
+/** System prompt picker: built-in prompts + user-authored prompts, with create/edit/delete. */
 export default function SystemPromptsSection({
-    systemPrompts,
-    customPrompts,
-    selectedSystemPrompt,
-    onSelectSystemPrompt,
-    onCustomPromptEdit,
-    onCreateCustomPrompt,
-    onDeleteCustomPrompt
+    systemPrompts, customPrompts, selectedSystemPrompt, onSelectSystemPrompt,
+    onCustomPromptEdit, onCreateCustomPrompt, onDeleteCustomPrompt
 }) {
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [confirmDeleteKey, setConfirmDeleteKey] = useState(null);
@@ -32,7 +20,7 @@ export default function SystemPromptsSection({
     useEffect(() => {
         if (!dropdownOpen) return;
         const handleClickOutside = (event) => {
-            if (containerRef.current && !containerRef.current.contains(event.target)) {
+            if (!containerRef.current?.contains(event.target)) {
                 setDropdownOpen(false);
                 setConfirmDeleteKey(null);
             }
@@ -41,28 +29,16 @@ export default function SystemPromptsSection({
         return () => document.removeEventListener('click', handleClickOutside);
     }, [dropdownOpen]);
 
-    const showTooltip = (e) => {
-        const tooltip = e.currentTarget.querySelector('.prompt-tooltip');
-        if (!tooltip) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        tooltip.style.left = `${rect.right + 12}px`;
-        tooltip.style.top = `${rect.top + rect.height / 2 - 20}px`;
-        tooltip.style.display = 'block';
-    };
-    const hideTooltip = (e) => {
-        const tooltip = e.currentTarget.querySelector('.prompt-tooltip');
-        if (tooltip) tooltip.style.display = 'none';
-    };
-
     const selectedIsCustom = isCustomPromptKey(selectedSystemPrompt);
     const selectedCustom = selectedIsCustom ? customPrompts.find(p => p.key === selectedSystemPrompt) : null;
-    const currentLabel = selectedIsCustom
-        ? (selectedCustom?.name || 'Custom prompt')
-        : builtinLabel(selectedSystemPrompt || DEFAULT_SYSTEM_PROMPT);
-
     const pick = (key) => {
         onSelectSystemPrompt(key);
         setDropdownOpen(false);
+        setConfirmDeleteKey(null);
+    };
+    const handleDelete = (key) => {
+        if (confirmDeleteKey !== key) return setConfirmDeleteKey(key);
+        onDeleteCustomPrompt(key);
         setConfirmDeleteKey(null);
     };
 
@@ -72,7 +48,7 @@ export default function SystemPromptsSection({
                 <button className="dropdown-toggle" onClick={() => setDropdownOpen(o => !o)}>
                     <span className="dropdown-label">
                         {selectedIsCustom && <span className="prompt-badge">custom</span>}
-                        {currentLabel}
+                        {selectedIsCustom ? selectedCustom?.name || 'Custom prompt' : builtinLabel(selectedSystemPrompt || DEFAULT_SYSTEM_PROMPT)}
                     </span>
                     <span className="dropdown-arrow">{dropdownOpen ? '▲' : '▼'}</span>
                 </button>
@@ -84,44 +60,22 @@ export default function SystemPromptsSection({
                                 key={prompt}
                                 className={`dropdown-item ${prompt === selectedSystemPrompt ? 'active' : ''}`}
                                 onClick={() => pick(prompt)}
-                                onMouseEnter={showTooltip}
-                                onMouseLeave={hideTooltip}
+                                title={PROMPT_DESCRIPTIONS[prompt] || 'Built-in system prompt.'}
                             >
                                 {builtinLabel(prompt)}
-                                <div className="prompt-tooltip">{getPromptDescription(prompt)}</div>
                             </li>
                         ))}
 
                         <li className="dropdown-group">Your prompts</li>
-                        {customPrompts.length === 0 && (
-                            <li className="dropdown-empty">None yet. Create one below.</li>
-                        )}
+                        {customPrompts.length === 0 && <li className="dropdown-empty">None yet. Create one below.</li>}
                         {customPrompts.map(p => (
-                            <li
-                                key={p.key}
-                                className={`dropdown-item custom ${p.key === selectedSystemPrompt ? 'active' : ''}`}
-                                onClick={() => pick(p.key)}
-                            >
+                            <li key={p.key} className={`dropdown-item custom ${p.key === selectedSystemPrompt ? 'active' : ''}`} onClick={() => pick(p.key)}>
                                 <span className="dropdown-item-name">{p.name}</span>
-                                <span className="dropdown-item-actions">
-                                    <button
-                                        className="mini-btn"
-                                        title="Edit"
-                                        onClick={(e) => { e.stopPropagation(); pick(p.key); onCustomPromptEdit(p.key); }}
-                                    >✏️</button>
-                                    <button
-                                        className={`mini-btn ${confirmDeleteKey === p.key ? 'danger' : ''}`}
-                                        title="Delete"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (confirmDeleteKey === p.key) {
-                                                onDeleteCustomPrompt(p.key);
-                                                setConfirmDeleteKey(null);
-                                            } else {
-                                                setConfirmDeleteKey(p.key);
-                                            }
-                                        }}
-                                    >{confirmDeleteKey === p.key ? 'Sure?' : '🗑️'}</button>
+                                <span className="dropdown-item-actions" onClick={(e) => e.stopPropagation()}>
+                                    <button className="mini-btn" title="Edit" onClick={() => { pick(p.key); onCustomPromptEdit(p.key); }}>✏️</button>
+                                    <button className={`mini-btn ${confirmDeleteKey === p.key ? 'danger' : ''}`} title="Delete" onClick={() => handleDelete(p.key)}>
+                                        {confirmDeleteKey === p.key ? 'Sure?' : '🗑️'}
+                                    </button>
                                 </span>
                             </li>
                         ))}
@@ -138,9 +92,7 @@ export default function SystemPromptsSection({
                         ✏️ Edit "{selectedCustom?.name || 'prompt'}"
                     </button>
                 )}
-                <button onClick={onCreateCustomPrompt} className="sidebar-btn">
-                    ＋ New custom prompt
-                </button>
+                <button onClick={onCreateCustomPrompt} className="sidebar-btn">＋ New custom prompt</button>
             </div>
         </div>
     );

@@ -240,17 +240,12 @@
     z-index: 1000;
     width: var(--sidebar-width);
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    transition: transform 0.25s ease, width 0.2s ease;
+    transition: width 0.2s ease;
   }
+  /* No transform on #sidebar: it would trap the fixed-position FAB and backdrop inside the drawer. */
 
   /* Collapsed state becomes a thin rail with the toggle always visible */
-  #sidebar.collapsed {
-    width: 28px;
-    transform: translateX(0);
-  }
-  #sidebar:not(.collapsed) {
-    transform: translateX(0);
-  }
+  #sidebar.collapsed { width: 28px; }
 
   /* Toggle button: bigger tap target. When sidebar is open, keep it inside; when collapsed, float it near the left. */
   .sidebar-toggle {
@@ -279,11 +274,6 @@
     left: 8px;
     top: 12px;
     transform: none;
-  }
-
-  /* Content scroll */
-  .sidebar-content {
-    -webkit-overflow-scrolling: touch;
   }
 
   /* Touch-friendly list items and buttons */
@@ -493,42 +483,3 @@
     color: white;
 }
 
-/* Tooltip for prompt descriptions - using a separate tooltip element instead of pseudo-element */
-.tooltip-container {
-    position: relative;
-}
-
-.dropdown-item {
-    position: relative;
-}
-
-.dropdown-item:hover .prompt-tooltip {
-    display: block;
-}
-
-.prompt-tooltip {
-    display: none;
-    position: fixed;
-    left: auto;
-    right: auto;
-    background-color: var(--container-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    color: var(--text-color);
-    font-size: 12px;
-    line-height: 1.4;
-    padding: 8px 12px;
-    max-width: 300px;
-    z-index: 1002;
-    pointer-events: none;
-    white-space: normal;
-}
-
-/* Mobile adjustments for dropdown */
-@media (max-width: 900px) {
-    .prompt-tooltip {
-        max-width: 250px;
-        font-size: 11px;
-    }
-}

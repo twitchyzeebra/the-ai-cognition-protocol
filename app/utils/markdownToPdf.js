@@ -1,44 +1,35 @@
 import { marked } from 'marked';
 
-const ACCENT_COLOR = '#667eea';
-const ACCENT_COLOR_MUTED = '#a0abe2';
+// Visual language mirrors resources.css.
+const ACCENT = '#667eea';
+const RULE_WIDTH = 515;
+const MUTED = { italics: true, color: '#666666' };
 
-// Dynamic imports for pdfMake to avoid SSR issues
-let pdfMakeInstance = null;
+let pdfMakePromise = null;
 
-async function initializePdfMake() {
-    if (pdfMakeInstance) return pdfMakeInstance;
-
-    const pdfMake = await import('pdfmake/build/pdfmake');
-    const pdfFonts = await import('pdfmake/build/vfs_fonts');
-
-    // Handle both default and named exports
-    const pdfMakeModule = pdfMake.default || pdfMake;
-    const vfs = pdfFonts.default?.pdfMake?.vfs || pdfFonts.pdfMake?.vfs;
-
-    if (vfs) {
-        pdfMakeModule.vfs = vfs;
-    }
-
-    pdfMakeInstance = pdfMakeModule;
-    return pdfMakeModule;
+// pdfmake is browser-only and large: load it, with its fonts, on first use.
+function loadPdfMake() {
+    pdfMakePromise ||= (async () => {
+        const pdfMakeModule = await import('pdfmake/build/pdfmake');
+        const pdfMake = pdfMakeModule.default || pdfMakeModule;
+        // Must load after pdfmake: vfs_fonts registers itself on the global pdfMake. Older builds export { pdfMake: { vfs } }.
+        const fonts = await import('pdfmake/build/vfs_fonts');
+        const vfs = fonts.default?.pdfMake?.vfs || fonts.pdfMake?.vfs;
+        if (vfs) pdfMake.vfs = vfs;
+        return pdfMake;
+    })().catch(err => { pdfMakePromise = null; throw err; });
+    return pdfMakePromise;
 }
 
-/**
- * Fetch image and convert to base64 data URI
- */
-async function imageUrlToBase64(url) {
+async function toDataUrl(url) {
     try {
-        // Handle relative URLs
-        const absoluteUrl = url.startsWith('http') ? url : window.location.origin + url;
-
-        const response = await fetch(absoluteUrl);
-        const blob = await response.blob();
-
-        return new Promise((resolve, reject) => {
+        const res = await fetch(new URL(url, window.location.href));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        return await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
+            reader.onerror = () => reject(reader.error);
             reader.readAsDataURL(blob);
         });
     } catch (error) {
@@ -47,477 +38,131 @@ async function imageUrlToBase64(url) {
     }
 }
 
-/**
- * Collect all image URLs from tokens
- */
-function collectImageUrls(tokens) {
-    const imageUrls = new Set();
-
-    function processToken(token) {
-        if (token.type === 'image') {
-            imageUrls.add(token.href);
-        }
-        if (token.tokens) {
-            token.tokens.forEach(processToken);
-        }
-        if (token.items) {
-            token.items.forEach(item => {
-                if (item.tokens) item.tokens.forEach(processToken);
-            });
-        }
-    }
-
-    tokens.forEach(processToken);
-    return Array.from(imageUrls);
-}
-
-/**
- * Convert markdown content to a PDF document
- * @param {string} markdown - The markdown content to convert
- * @param {string} filename - The filename for the downloaded PDF
- */
-export async function convertMarkdownToPdf(markdown, filename) {
-    // Initialize pdfMake with fonts
-    const pdfMake = await initializePdfMake();
-
-    // Parse markdown to tokens
-    const tokens = marked.lexer(markdown);
-
-    // Pre-fetch all images and convert to base64
-    const imageUrls = collectImageUrls(tokens);
-    const imageMap = new Map();
-
-    await Promise.all(
-        imageUrls.map(async (url) => {
-            const base64 = await imageUrlToBase64(url);
-            if (base64) {
-                imageMap.set(url, base64);
-            }
-        })
-    );
-
-    // Convert tokens to pdfMake document definition
-    const docDefinition = {
-        pageMargins: [40, 40, 40, 40],
-        content: tokensToContent(tokens, imageMap),
-        styles: {
-            h1: {
-                fontSize: 24,
-                bold: true,
-                margin: [0, 14, 0, 2],
-                color: '#1a1a1a'
-            },
-            h2: {
-                fontSize: 20,
-                bold: true,
-                margin: [0, 12, 0, 7],
-                color: '#2d2d2d'
-            },
-            h3: {
-                fontSize: 16,
-                bold: true,
-                margin: [0, 10, 0, 7],
-                color: '#2d2d2d'
-            },
-            h4: {
-                fontSize: 15,
-                bold: true,
-                margin: [0, 8, 0, 7],
-                color: '#2d2d2d'
-            },
-            h5: {
-                fontSize: 14,
-                bold: true,
-                margin: [0, 6, 0, 7],
-                color: '#2d2d2d'
-            },
-            h6: {
-                fontSize: 13,
-                bold: true,
-                margin: [0, 5, 0, 2],
-                color: '#2d2d2d'
-            },
-            paragraph: {
-                fontSize: 12,
-                margin: [0, 0, 0, 11],
-                lineHeight: 1.3
-            },
-            code: {
-                fontSize: 10.5,
-                margin: [0, 4, 0, 4],
-                preserveLeadingSpaces: true
-            },
-            blockquote: {
-                fontSize: 12,
-                italics: true,
-                margin: [0, 4, 0, 4],
-                color: '#424242'
-            },
-            listItem: {
-                fontSize: 12,
-                margin: [0, 1, 0, 1],
-                lineHeight: 1.4
-            },
-            link: {
-                color: ACCENT_COLOR,
-                decoration: 'underline'
-            },
-            tableHeader: {
-                bold: true,
-                fontSize: 12,
-                color: '#ffffff'
-            },
-            tableCell: {
-                fontSize: 12
-            }
-        },
-        defaultStyle: {
-            font: 'Roboto',
-            fontSize: 12,
-            lineHeight: 1.35
-        }
-    };
-
-    // Generate and download PDF
-    pdfMake.createPdf(docDefinition).download(filename);
-}
-
-/**
- * Convert marked tokens to pdfMake content array
- */
-function tokensToContent(tokens, imageMap = new Map()) {
-    const content = [];
-
+function collectImageUrls(tokens, urls = new Set()) {
     for (const token of tokens) {
-        const element = tokenToElement(token, imageMap);
-        if (element) {
-            if (Array.isArray(element)) {
-                content.push(...element);
-            } else {
-                content.push(element);
-            }
-        }
+        if (token.type === 'image') urls.add(token.href);
+        if (token.tokens) collectImageUrls(token.tokens, urls);
+        if (token.items) collectImageUrls(token.items, urls);
     }
-
-    return content;
+    return urls;
 }
 
-/**
- * Convert a single token to a pdfMake element
- */
-function tokenToElement(token, imageMap) {
+const heading = (fontSize, top, bottom = 7, color = '#2d2d2d') => ({ fontSize, bold: true, margin: [0, top, 0, bottom], color });
+const pdfStyles = () => ({
+    h1: heading(24, 14, 2, '#1a1a1a'), h2: heading(20, 12), h3: heading(16, 10), h4: heading(15, 8), h5: heading(14, 6), h6: heading(13, 5, 2),
+    paragraph: { fontSize: 12, margin: [0, 0, 0, 11], lineHeight: 1.3 },
+    listItem: { fontSize: 12, margin: [0, 1, 0, 1], lineHeight: 1.4 },
+    link: { color: ACCENT, decoration: 'underline' }
+});
+
+const rule = (lineColor, margin) => ({ canvas: [{ type: 'line', x1: 0, y1: 0, x2: RULE_WIDTH, y2: 0, lineWidth: 2, lineColor }], margin });
+const padding = (left, right, top, bottom) => ({
+    paddingLeft: typeof left === 'function' ? left : () => left, paddingRight: () => right, paddingTop: () => top, paddingBottom: () => bottom
+});
+const NO_LINES = { hLineWidth: () => 0, vLineWidth: () => 0 };
+
+/** Markdown tokens → pdfMake content array. */
+const blocks = (tokens, images) => tokens.flatMap(token => block(token, images) ?? []);
+
+function block(token, images) {
     switch (token.type) {
         case 'heading': {
-            const headingElement = {
-                text: parseInlineTokens(token.tokens, imageMap),
-                style: `h${token.depth}`
-            };
-            // h1 gets a purple bottom border like resources.css
-            if (token.depth === 1) {
-                return [
-                    headingElement,
-                    {
-                        canvas: [{
-                            type: 'line',
-                            x1: 0, y1: 0,
-                            x2: 515, y2: 0,
-                            lineWidth: 2,
-                            lineColor: ACCENT_COLOR
-                        }],
-                        margin: [0, 0, 0, 8]
-                    }
-                ];
-            }
-            return headingElement;
+            const el = { text: inline(token.tokens), style: `h${token.depth}` };
+            return token.depth === 1 ? [el, rule(ACCENT, [0, 0, 0, 8])] : el;
         }
-
-        case 'paragraph':
-            // Check if paragraph contains only an image
-            if (token.tokens.length === 1 && token.tokens[0].type === 'image') {
-                // Extract image as block-level element
-                const imageToken = token.tokens[0];
-                const base64Image = imageMap?.get(imageToken.href);
-                if (base64Image) {
-                    return {
-                        image: base64Image,
-                        width: 500,
-                        margin: [0, 10, 0, 10]
-                    };
-                } else {
-                    return {
-                        text: `[Image: ${imageToken.alt || imageToken.href}]`,
-                        style: 'paragraph',
-                        italics: true,
-                        color: '#666666'
-                    };
+        case 'paragraph': {
+            const [first] = token.tokens;
+            if (token.tokens.length !== 1 || first.type !== 'image') return { text: inline(token.tokens), style: 'paragraph' };
+            // Image-only paragraph → block image (or a placeholder if it could not be fetched)
+            const data = images.get(first.href);
+            return data ? { image: data, width: 500, margin: [0, 10, 0, 10] } : { text: `[Image: ${first.alt || first.href}]`, style: 'paragraph', ...MUTED };
+        }
+        case 'code': // dark block via a single-cell table
+            return {
+                table: { widths: ['*'], body: [[{ text: token.text, fontSize: 10.5, color: '#f8f8f2', preserveLeadingSpaces: true, lineHeight: 1.5 }]] },
+                layout: { fillColor: () => '#2d2d2d', ...NO_LINES, ...padding(12, 12, 8, 8) },
+                margin: [0, 4, 0, 4]
+            };
+        case 'blockquote': // accent left border + grey background via a two-column table
+            return {
+                table: { widths: [3, '*'], body: [[{ text: '', fillColor: ACCENT }, { stack: blocks(token.tokens, images), fillColor: '#f0f0f0', color: '#555555', italics: true }]] },
+                layout: { ...NO_LINES, ...padding(i => (i === 0 ? 0 : 12), 12, 6, 6) },
+                margin: [0, 4, 0, 4]
+            };
+        case 'list': {
+            const items = token.items.map(item => {
+                const content = blocks(item.tokens, images);
+                return content.length > 1 ? { stack: content, margin: [0, 0, 0, 0] } : content[0] ?? '';
+            });
+            const list = { [token.ordered ? 'ol' : 'ul']: items, margin: [0, 5, 0, 5], style: 'listItem' };
+            if (token.ordered && token.start && token.start !== 1) list.start = token.start;
+            return list;
+        }
+        case 'table': // accent header row, alternating row shading
+            return {
+                table: {
+                    headerRows: 1,
+                    widths: token.header.map(() => '*'),
+                    body: [
+                        token.header.map(cell => ({ text: inline(cell.tokens), bold: true, fontSize: 12, color: '#ffffff' })),
+                        ...token.rows.map(row => row.map(cell => ({ text: inline(cell.tokens), fontSize: 12 })))
+                    ]
+                },
+                margin: [0, 8, 0, 10],
+                layout: {
+                    hLineWidth: () => 0.5, vLineWidth: () => 0.5, hLineColor: () => '#dddddd', vLineColor: () => '#dddddd',
+                    fillColor: (row) => (row === 0 ? ACCENT : row % 2 === 0 ? '#f9f9f9' : null),
+                    ...padding(8, 8, 6, 6)
                 }
-            }
-
-            // Regular paragraph with text
-            return {
-                text: parseInlineTokens(token.tokens, imageMap),
-                style: 'paragraph'
             };
-
-        // Dark background code block via single-cell table with fillColor
-        case 'code':
-            return {
-                table: {
-                    widths: ['*'],
-                    body: [[{
-                        text: token.text,
-                        fontSize: 10.5,
-                        color: '#f8f8f2',
-                        preserveLeadingSpaces: true,
-                        lineHeight: 1.5
-                    }]]
-                },
-                layout: {
-                    fillColor: () => '#2d2d2d',
-                    hLineWidth: () => 0,
-                    vLineWidth: () => 0,
-                    paddingLeft: () => 12,
-                    paddingRight: () => 12,
-                    paddingTop: () => 8,
-                    paddingBottom: () => 8
-                },
-                margin: [0, 4, 0, 4]
-            };
-
-        // Purple left border + gray background via 2-column table
-        case 'blockquote': {
-            const blockquoteContent = tokensToContent(token.tokens, imageMap);
-            return {
-                table: {
-                    widths: [3, '*'],
-                    body: [[
-                        { text: '', fillColor: ACCENT_COLOR },
-                        {
-                            stack: blockquoteContent,
-                            fillColor: '#f0f0f0',
-                            color: '#555555',
-                            italics: true
-                        }
-                    ]]
-                },
-                layout: {
-                    hLineWidth: () => 0,
-                    vLineWidth: () => 0,
-                    paddingLeft: (i) => i === 0 ? 0 : 12,
-                    paddingRight: () => 12,
-                    paddingTop: () => 6,
-                    paddingBottom: () => 6
-                },
-                margin: [0, 4, 0, 4]
-            };
-        }
-
-        case 'list':
-            return listToElement(token, imageMap);
-
-        case 'table':
-            return tableToElement(token, imageMap);
-
         case 'hr':
-            return {
-                canvas: [{
-                    type: 'line',
-                    x1: 0, y1: 0,
-                    x2: 515, y2: 0,
-                    lineWidth: 2,
-                    lineColor: ACCENT_COLOR_MUTED
-                }],
-                margin: [0, 10, 0, 10]
-            };
-
-        case 'space':
-            // Blank lines in markdown are paragraph separators, not extra spacing.
-            // CSS collapses them; we match that by emitting nothing.
-            return null;
-
-        case 'html':
-            return null;
-
+            return rule('#a0abe2', [0, 10, 0, 10]);
         case 'text':
-            return {
-                text: parseInlineTokens(token.tokens, imageMap),
-                fontSize: 12,
-                lineHeight: 1.4
-            };
-
-        default:
+            return { text: inline(token.tokens), fontSize: 12, lineHeight: 1.4 };
+        default: // 'space' (paragraph separators) and 'html' render nothing
             return null;
     }
 }
 
-/**
- * Apply style properties to inline content
- * Handles the case where content is a string, object, or array
- */
-function applyStylesToContent(content, styles) {
-    if (typeof content === 'string') {
-        return { text: content, ...styles };
-    } else if (Array.isArray(content)) {
-        return content.map(item => applyStylesToContent(item, styles));
-    } else if (typeof content === 'object') {
-        return { ...content, ...styles };
-    }
-    return content;
-}
+const withStyle = (content, style) =>
+    typeof content === 'string' ? { text: content, ...style }
+        : Array.isArray(content) ? content.map(c => withStyle(c, style))
+            : { ...content, ...style };
 
-/**
- * Parse inline tokens (emphasis, strong, links, etc.)
- */
-function parseInlineTokens(tokens, imageMap) {
-    if (!tokens || tokens.length === 0) return '';
+/** Inline tokens (emphasis, links, code…) → pdfMake text fragments. */
+const inline = (tokens) => (tokens?.length ? tokens.flatMap(inlineFragment) : '');
 
-    const textElements = [];
-
-    for (const token of tokens) {
-        const element = inlineTokenToElement(token, imageMap);
-        if (element !== null) {
-            if (Array.isArray(element)) {
-                textElements.push(...element);
-            } else {
-                textElements.push(element);
-            }
-        }
-    }
-
-    return textElements;
-}
-
-/**
- * Convert inline token to text element
- */
-function inlineTokenToElement(token, imageMap) {
+function inlineFragment(token) {
     switch (token.type) {
-        case 'text':
-            return token.text;
-
-        case 'strong':
-            const strongContent = parseInlineTokens(token.tokens, imageMap);
-            return applyStylesToContent(strongContent, { bold: true });
-
-        case 'em':
-            const emContent = parseInlineTokens(token.tokens, imageMap);
-            return applyStylesToContent(emContent, { italics: true });
-
-        case 'codespan':
-            return {
-                text: token.text,
-                fontSize: 10.5,
-                background: '#f5f5f5',
-                color: '#d63384'
-            };
-
-        case 'link':
-            return {
-                text: parseInlineTokens(token.tokens, imageMap),
-                style: 'link',
-                link: token.href
-            };
-
-        case 'image':
-            return {
-                text: `[Image: ${token.alt || token.href}]`,
-                italics: true,
-                color: '#666666'
-            };
-
-        case 'br':
-            return '\n';
-
-        case 'del':
-            return {
-                text: parseInlineTokens(token.tokens, imageMap),
-                decoration: 'lineThrough'
-            };
-
-        default:
-            return token.text || '';
+        case 'text': return token.text;
+        case 'strong': return withStyle(inline(token.tokens), { bold: true });
+        case 'em': return withStyle(inline(token.tokens), { italics: true });
+        case 'codespan': return { text: token.text, fontSize: 10.5, background: '#f5f5f5', color: '#d63384' };
+        case 'link': return { text: inline(token.tokens), style: 'link', link: token.href };
+        case 'image': return { text: `[Image: ${token.alt || token.href}]`, ...MUTED };
+        case 'br': return '\n';
+        case 'del': return { text: inline(token.tokens), decoration: 'lineThrough' };
+        default: return token.text || '';
     }
 }
 
 /**
- * Convert list token to pdfMake element
+ * Convert markdown to a PDF and download it.
+ * @param {string} markdown
+ * @param {string} filename
  */
-function listToElement(token, imageMap) {
-    const items = token.items.map(item => {
-        const itemContent = tokensToContent(item.tokens, imageMap);
-
-        if (itemContent.length === 0) {
-            return '';
-        } else if (itemContent.length === 1) {
-            return itemContent[0];
-        } else {
-            return {
-                stack: itemContent,
-                margin: [0, 0, 0, 0]
-            };
-        }
-    });
-
-    if (token.ordered) {
-        const listConfig = {
-            ol: items,
-            margin: [0, 5, 0, 5],
-            style: 'listItem'
-        };
-
-        if (token.start && token.start !== 1) {
-            listConfig.start = token.start;
-        }
-
-        return listConfig;
-    } else {
-        return {
-            ul: items,
-            margin: [0, 5, 0, 5],
-            style: 'listItem'
-        };
-    }
-}
-
-/**
- * Convert table token to pdfMake element
- * Purple headers with white text, alternating row colors
- */
-function tableToElement(token, imageMap) {
-    const headers = token.header.map(cell => ({
-        text: parseInlineTokens(cell.tokens, imageMap),
-        bold: true,
-        fontSize: 12,
-        color: '#ffffff'
+export async function convertMarkdownToPdf(markdown, filename) {
+    const pdfMake = await loadPdfMake();
+    const tokens = marked.lexer(markdown);
+    const images = new Map();
+    await Promise.all([...collectImageUrls(tokens)].map(async url => {
+        const data = await toDataUrl(url);
+        if (data) images.set(url, data);
     }));
-
-    const rows = token.rows.map(row =>
-        row.map(cell => ({
-            text: parseInlineTokens(cell.tokens, imageMap),
-            fontSize: 12
-        }))
-    );
-
-    return {
-        table: {
-            headerRows: 1,
-            widths: Array(token.header.length).fill('*'),
-            body: [headers, ...rows]
-        },
-        margin: [0, 8, 0, 10],
-        layout: {
-            hLineWidth: () => 0.5,
-            vLineWidth: () => 0.5,
-            hLineColor: () => '#dddddd',
-            vLineColor: () => '#dddddd',
-            fillColor: (rowIndex) => {
-                if (rowIndex === 0) return ACCENT_COLOR;
-                return rowIndex % 2 === 0 ? '#f9f9f9' : null;
-            },
-            paddingLeft: () => 8,
-            paddingRight: () => 8,
-            paddingTop: () => 6,
-            paddingBottom: () => 6
-        }
-    };
+    pdfMake.createPdf({
+        pageMargins: [40, 40, 40, 40],
+        content: blocks(tokens, images),
+        styles: pdfStyles(),
+        defaultStyle: { font: 'Roboto', fontSize: 12, lineHeight: 1.35 }
+    }).download(filename);
 }
